@@ -2,6 +2,7 @@ const serverStatus = document.querySelector("#serverStatus");
 const adminResult = document.querySelector("#adminResult");
 const configStatusList = document.querySelector("#configStatusList");
 const ragStatusBox = document.querySelector("#ragStatusBox");
+const jobStatusBox = document.querySelector("#jobStatusBox");
 const askForm = document.querySelector("#askForm");
 const askButton = document.querySelector("#askButton");
 const askResult = document.querySelector("#askResult");
@@ -9,66 +10,29 @@ const conditionResult = document.querySelector("#conditionResult");
 const sourceList = document.querySelector("#sourceList");
 const policyList = document.querySelector("#policyList");
 const youthOnly = document.querySelector("#youthOnly");
+const excludeSample = document.querySelector("#excludeSample");
+const indexedOnly = document.querySelector("#indexedOnly");
 
+const activePolling = new Set();
 let loadedPolicies = [];
 
+const INGEST_QUERY = "maxPages=1&pageSize=20&maxItems=50";
+
 const adminActions = {
-  configStatus: {
-    path: "/api/admin/config/status",
-    method: "GET",
-    busyText: "확인 중...",
-    success: renderConfigStatus
-  },
-  ragStatus: {
-    path: "/api/admin/rag/status",
-    method: "GET",
-    busyText: "확인 중...",
-    success: renderRagStatus
-  },
-  ingestPublicService: {
-    path: "/api/admin/ingest/public-service",
-    method: "POST",
-    busyText: "수집 및 인덱싱 중...",
-    success: (body) => renderIngestResult(body, "행정안전부 공공서비스")
-  },
-  ingestLocalWelfare: {
-    path: "/api/admin/ingest/local-welfare",
-    method: "POST",
-    busyText: "수집 및 인덱싱 중...",
-    success: (body) => renderIngestResult(body, "지자체복지서비스")
-  },
-  ingestCentralWelfare: {
-    path: "/api/admin/ingest/central-welfare",
-    method: "POST",
-    busyText: "수집 및 인덱싱 중...",
-    success: (body) => renderIngestResult(body, "중앙부처복지서비스")
-  },
-  ingestAll: {
-    path: "/api/admin/ingest/all",
-    method: "POST",
-    busyText: "수집 및 인덱싱 중...",
-    success: renderAllIngestResult
-  },
-  reindexReal: {
-    path: "/api/admin/rag/reindex-real",
-    method: "POST",
-    busyText: "재인덱싱 중...",
-    success: (body) => renderIngestResult(body, "실제 정책 데이터")
-  },
-  loadPolicies: {
-    path: "/api/policies",
-    method: "GET",
-    busyText: "불러오는 중...",
-    success: renderPolicies
-  }
+  configStatus: { path: "/api/admin/config/status", method: "GET", success: renderConfigStatus },
+  ragStatus: { path: "/api/admin/rag/status", method: "GET", success: renderRagStatus },
+  ingestAll: { path: `/api/admin/ingest/all?${INGEST_QUERY}`, method: "POST", job: true },
+  ingestPublicService: { path: `/api/admin/ingest/public-service?${INGEST_QUERY}`, method: "POST", job: true },
+  ingestLocalWelfare: { path: `/api/admin/ingest/local-welfare?${INGEST_QUERY}`, method: "POST", job: true },
+  ingestCentralWelfare: { path: `/api/admin/ingest/central-welfare?${INGEST_QUERY}`, method: "POST", job: true },
+  indexReal: { path: "/api/admin/rag/index?limit=30", method: "POST", job: true },
+  reindexReal: { path: "/api/admin/rag/reindex-real?limit=30", method: "POST", job: true },
+  loadPolicies: { path: "/api/policies", method: "GET", success: renderPolicies }
 };
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options
   });
   const body = await response.json();
@@ -92,6 +56,10 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function checkServer() {
   try {
     await api("/api/policies");
@@ -107,41 +75,153 @@ document.querySelectorAll("[data-action]").forEach((button) => {
   button.addEventListener("click", () => runAdminAction(button));
 });
 
-youthOnly.addEventListener("change", () => renderPolicyCards());
+[youthOnly, excludeSample, indexedOnly].forEach((checkbox) => {
+  checkbox.addEventListener("change", renderPolicyCards);
+});
 
 async function runAdminAction(button) {
   const action = adminActions[button.dataset.action];
   const originalText = button.textContent;
-  const ingestAction = button.dataset.action.startsWith("ingest");
-  setBusyForAction(button, true, action.busyText || "처리 중...", ingestAction);
+  button.disabled = true;
+  button.textContent = action.job ? "작업 시작 중..." : "처리 중...";
   setMessage(adminResult, "", "");
-  if (button.dataset.action !== "configStatus") {
-    configStatusList.innerHTML = "";
-  }
-  if (button.dataset.action !== "ragStatus") {
-    ragStatusBox.innerHTML = "";
-  }
 
   try {
     const body = await api(action.path, { method: action.method });
+    if (action.job) {
+      const job = body.data;
+      button.textContent = "백그라운드 실행 중...";
+      renderJob(job);
+      setMessage(adminResult, `${body.message}: ${job.jobId}`, "success");
+      pollJob(job.jobId, button, originalText);
+      return;
+    }
     action.success(body);
   } catch (error) {
     setMessage(adminResult, `${originalText} 실패: ${error.message}`, "error");
   } finally {
-    setBusyForAction(button, false, originalText, ingestAction);
+    if (!action.job || !button.textContent.includes("백그라운드")) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
   }
 }
 
-function setBusyForAction(activeButton, busy, text, lockIngestButtons) {
-  const buttons = lockIngestButtons
-    ? document.querySelectorAll("[data-action^='ingest']")
-    : [activeButton];
-  buttons.forEach((button) => {
-    button.disabled = busy;
-    if (button === activeButton) {
-      button.textContent = text;
+async function pollJob(jobId, button, originalText) {
+  if (activePolling.has(jobId)) {
+    return;
+  }
+  activePolling.add(jobId);
+  let consecutiveErrors = 0;
+  try {
+    while (true) {
+      await delay(1500);
+      try {
+        const body = await api(`/api/admin/jobs/${encodeURIComponent(jobId)}`);
+        const job = body.data;
+        consecutiveErrors = 0;
+        renderJob(job);
+        if (job.status === "SUCCESS") {
+          setMessage(adminResult, `${job.message}${indexingHint(job)}`, "success");
+          await refreshRagStatus();
+          break;
+        }
+        if (job.status === "FAILED") {
+          setMessage(adminResult, `${job.type} 실패: ${job.errorMessage || job.message}`, "error");
+          break;
+        }
+      } catch (error) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= 5) {
+          setMessage(adminResult, `작업 상태 조회 실패: ${error.message}`, "error");
+          break;
+        }
+      }
     }
-  });
+  } finally {
+    activePolling.delete(jobId);
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+function renderJob(job) {
+  const domId = `job-${String(job.jobId).replaceAll(/[^a-zA-Z0-9_-]/g, "")}`;
+  let card = document.getElementById(domId);
+  if (!card) {
+    jobStatusBox.insertAdjacentHTML("afterbegin", `<article id="${domId}" class="job-card"></article>`);
+    card = document.getElementById(domId);
+  }
+  card.className = `job-card ${String(job.status || "").toLowerCase()}`;
+  card.innerHTML = `
+    <div class="job-title"><strong>${escapeHtml(job.type)}</strong><span>${escapeHtml(job.status)}</span></div>
+    <div class="progress-track"><div class="progress-value" style="width:${Number(job.progressPercent || 0)}%"></div></div>
+    <dl class="job-details">
+      <dt>진행률</dt><dd>${Number(job.progressPercent || 0)}%</dd>
+      <dt>메시지</dt><dd>${escapeHtml(job.message)}</dd>
+      <dt>시작 시간</dt><dd>${escapeHtml(formatDateTime(job.startedAt))}</dd>
+      <dt>종료 시간</dt><dd>${escapeHtml(formatDateTime(job.finishedAt))}</dd>
+    </dl>
+    ${renderJobResult(job)}
+  `;
+}
+
+function renderJobResult(job) {
+  if (!job.result) {
+    return job.errorMessage ? `<p class="job-error">${escapeHtml(job.errorMessage)}</p>` : "";
+  }
+  if (job.type === "INGEST_ALL") {
+    const labels = {
+      publicService: "행정안전부 공공서비스",
+      localWelfare: "지자체복지서비스",
+      centralWelfare: "중앙부처복지서비스"
+    };
+    return `<div class="job-result">${Object.entries(labels)
+      .map(([key, label]) => `<p>${escapeHtml(label)}: ${escapeHtml(formatIngestCounts(job.result[key] || {}))}</p>`)
+      .join("")}</div>`;
+  }
+  if (job.type.startsWith("INGEST_")) {
+    return `<div class="job-result"><p>${escapeHtml(formatIngestCounts(job.result))}</p></div>`;
+  }
+  return `<div class="job-result"><p>인덱싱 ${Number(job.result.indexedCount || 0).toLocaleString()}건</p></div>`;
+}
+
+function indexingHint(job) {
+  return job.type === "INDEX_REAL" || job.type === "REINDEX_REAL"
+    ? " 남은 미인덱싱 정책이 있으면 인덱싱 버튼을 다시 실행하세요."
+    : "";
+}
+
+function formatDateTime(value) {
+  return value ? new Date(value).toLocaleString("ko-KR") : "-";
+}
+
+async function restoreRunningJobs() {
+  try {
+    const body = await api("/api/admin/jobs/running");
+    body.data.forEach((job) => {
+      renderJob(job);
+      const button = document.querySelector(`[data-job-type="${job.type}"]`);
+      const originalText = button?.textContent;
+      if (button) {
+        button.disabled = true;
+        button.textContent = "백그라운드 실행 중...";
+      }
+      pollJob(job.jobId, button, originalText);
+    });
+  } catch (error) {
+    setMessage(adminResult, `실행 중인 작업 조회 실패: ${error.message}`, "error");
+  }
+}
+
+async function refreshRagStatus() {
+  try {
+    renderRagStatus(await api("/api/admin/rag/status"), false);
+  } catch (error) {
+    setMessage(adminResult, `RAG 상태 갱신 실패: ${error.message}`, "error");
+  }
 }
 
 function renderConfigStatus(body) {
@@ -154,18 +234,14 @@ function renderConfigStatus(body) {
     youthCenterConfigured: "YOUTH_CENTER_API_KEY"
   };
   configStatusList.innerHTML = Object.entries(labels)
-    .map(([key, label]) => {
-      const configured = Boolean(body.data[key]);
-      return `<div class="status-row ${configured ? "ok" : "missing"}">
-        <span>${escapeHtml(label)}</span>
-        <strong>${configured ? "설정됨" : "미설정"}</strong>
-      </div>`;
-    })
+    .map(([key, label]) => `<div class="status-row ${body.data[key] ? "ok" : "missing"}">
+      <span>${escapeHtml(label)}</span><strong>${body.data[key] ? "설정됨" : "미설정"}</strong>
+    </div>`)
     .join("");
   setMessage(adminResult, body.message, "success");
 }
 
-function renderRagStatus(body) {
+function renderRagStatus(body, showMessage = true) {
   const data = body.data || {};
   const sourceTypes = data.bySourceType || {};
   ragStatusBox.innerHTML = `
@@ -175,6 +251,7 @@ function renderRagStatus(body) {
       ${summaryTile("샘플 정책", data.samplePolicies)}
       ${summaryTile("청년 관련", data.youthRelatedPolicies)}
       ${summaryTile("인덱싱 완료", data.indexedYouthPolicies)}
+      ${summaryTile("미인덱싱", data.unindexedYouthPolicies)}
     </div>
     <div class="source-status-grid">
       ${Object.entries(sourceTypes).map(([sourceType, counts]) => `
@@ -183,37 +260,20 @@ function renderRagStatus(body) {
           <p>전체 ${counts.total ?? 0}건</p>
           <p>청년 관련 ${counts.youthRelated ?? 0}건</p>
           <p>인덱싱 ${counts.indexed ?? 0}건</p>
-        </article>
-      `).join("")}
-    </div>
-  `;
-  setMessage(adminResult, body.message, "success");
+          <p>미인덱싱 ${counts.unindexed ?? 0}건</p>
+        </article>`).join("")}
+    </div>`;
+  if (showMessage) {
+    setMessage(adminResult, body.message, "success");
+  }
 }
 
 function summaryTile(label, value) {
   return `<div class="summary-tile"><span>${escapeHtml(label)}</span><strong>${Number(value ?? 0).toLocaleString()}</strong></div>`;
 }
 
-function renderIngestResult(body, label) {
-  const data = body.data || {};
-  setMessage(adminResult, `${label}: ${formatIngestCounts(data)}`, "success");
-}
-
-function renderAllIngestResult(body) {
-  const labels = {
-    publicService: "행정안전부 공공서비스",
-    localWelfare: "지자체복지서비스",
-    centralWelfare: "중앙부처복지서비스"
-  };
-  const lines = Object.entries(labels).map(([key, label]) => {
-    const data = body.data?.[key] || {};
-    return `${label}: ${formatIngestCounts(data)}`;
-  });
-  setMessage(adminResult, `${body.message}\n${lines.join("\n")}`, "success");
-}
-
 function formatIngestCounts(data) {
-  return `수집 ${data.fetchedCount ?? 0}건, 청년 관련 ${data.savedCount ?? 0}건, 인덱싱 ${data.indexedCount ?? 0}건, 제외 ${data.skippedCount ?? 0}건`;
+  return `수집 ${data.fetchedCount ?? 0}건, 청년 관련 ${data.savedCount ?? 0}건, 제외 ${data.skippedCount ?? 0}건`;
 }
 
 function renderPolicies(body) {
@@ -223,10 +283,14 @@ function renderPolicies(body) {
 }
 
 function renderPolicyCards() {
-  const policies = youthOnly.checked
-    ? loadedPolicies.filter((policy) => policy.youthRelated && policy.sourceType !== "SAMPLE")
-    : loadedPolicies;
-  policyList.innerHTML = policies.map(renderPolicyCard).join("");
+  const policies = loadedPolicies.filter((policy) => {
+    if (youthOnly.checked && !policy.youthRelated) return false;
+    if (excludeSample.checked && policy.sourceType === "SAMPLE") return false;
+    return !indexedOnly.checked || policy.indexed;
+  });
+  policyList.innerHTML = policies.length
+    ? policies.map(renderPolicyCard).join("")
+    : '<div class="empty-state">조건에 맞는 저장 정책이 없습니다.</div>';
 }
 
 askForm.addEventListener("submit", async (event) => {
@@ -237,13 +301,12 @@ askForm.addEventListener("submit", async (event) => {
   conditionResult.innerHTML = "";
   sourceList.innerHTML = "";
   try {
-    const payload = {
-      question: document.querySelector("#question").value,
-      topK: numberOrNull(document.querySelector("#topK").value)
-    };
     const body = await api("/api/rag/ask", {
       method: "POST",
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        question: document.querySelector("#question").value,
+        topK: numberOrNull(document.querySelector("#topK").value)
+      })
     });
     conditionResult.innerHTML = renderCondition(body.data.extractedCondition);
     askResult.textContent = body.data.answer;
@@ -261,53 +324,38 @@ function numberOrNull(value) {
 }
 
 function renderCondition(condition) {
-  if (!condition) {
-    return "";
-  }
+  if (!condition) return "";
   const items = [
-    ["지역", condition.region],
-    ["나이", condition.age],
-    ["취업상태", condition.employmentStatus],
-    ["대상", condition.targetGroup],
-    ["키워드", (condition.keywords || []).join(", ")]
+    ["지역", condition.region], ["나이", condition.age], ["취업상태", condition.employmentStatus],
+    ["대상", condition.targetGroup], ["키워드", (condition.keywords || []).join(", ")]
   ];
-  return `
-    <div class="condition-title">추출 조건</div>
-    <div class="condition-items">
-      ${items.map(([label, value]) => `<span>${escapeHtml(label)}=${escapeHtml(value ?? "미추출")}</span>`).join("")}
-    </div>
-  `;
+  return `<div class="condition-title">추출 조건</div><div class="condition-items">
+    ${items.map(([label, value]) => `<span>${escapeHtml(label)}=${escapeHtml(value ?? "미추출")}</span>`).join("")}
+  </div>`;
 }
 
 function renderSourceCard(source) {
-  return `
-    <article class="card">
-      <h3>${escapeHtml(source.title)}</h3>
-      <div class="meta">
-        <span class="badge">${escapeHtml(source.sourceType)}</span>
-        <span class="badge">${escapeHtml(source.regionName)}</span>
-        <span class="badge">${escapeHtml(source.categoryName)}</span>
-      </div>
-      ${source.officialUrl ? `<a href="${escapeHtml(source.officialUrl)}" target="_blank" rel="noreferrer">${escapeHtml(source.officialUrl)}</a>` : ""}
-    </article>
-  `;
+  return `<article class="card">
+    <h3>${escapeHtml(source.title)}</h3>
+    <div class="meta"><span class="badge">${escapeHtml(source.sourceType)}</span><span class="badge">${escapeHtml(source.regionName)}</span><span class="badge">${escapeHtml(source.categoryName)}</span></div>
+    ${source.officialUrl ? `<a href="${escapeHtml(source.officialUrl)}" target="_blank" rel="noreferrer">${escapeHtml(source.officialUrl)}</a>` : ""}
+  </article>`;
 }
 
 function renderPolicyCard(policy) {
-  return `
-    <article class="card">
-      <h3>${escapeHtml(policy.title)}</h3>
-      <p>${escapeHtml(policy.summary)}</p>
-      <div class="meta">
-        <span class="badge">${escapeHtml(policy.sourceType)}</span>
-        <span class="badge">${escapeHtml(policy.regionName)}</span>
-        <span class="badge">${escapeHtml(policy.categoryName)}</span>
-        <span class="badge">${policy.indexed ? "indexed" : "not indexed"}</span>
-        <span class="badge">청년 관련: ${policy.youthRelated ? "Y" : "N"}</span>
-      </div>
-      ${policy.officialUrl ? `<a href="${escapeHtml(policy.officialUrl)}" target="_blank" rel="noreferrer">${escapeHtml(policy.officialUrl)}</a>` : ""}
-    </article>
-  `;
+  return `<article class="card">
+    <h3>${escapeHtml(policy.title)}</h3>
+    <div class="meta">
+      <span class="badge">${escapeHtml(policy.sourceType)}</span>
+      <span class="badge">${escapeHtml(policy.regionName)}</span>
+      <span class="badge">${escapeHtml(policy.categoryName)}</span>
+      <span class="badge">청년 관련 ${policy.youthRelated ? "Y" : "N"}</span>
+      <span class="badge">인덱싱 ${policy.indexed ? "Y" : "N"}</span>
+    </div>
+    <p>${escapeHtml(policy.summary)}</p>
+    ${policy.officialUrl ? `<a href="${escapeHtml(policy.officialUrl)}" target="_blank" rel="noreferrer">${escapeHtml(policy.officialUrl)}</a>` : ""}
+  </article>`;
 }
 
 checkServer();
+restoreRunningJobs();

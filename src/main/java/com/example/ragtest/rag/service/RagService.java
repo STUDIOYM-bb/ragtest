@@ -35,9 +35,9 @@ import java.util.Objects;
 public class RagService {
 
     private static final String NO_COLLECTED_YOUTH_DATA =
-            "아직 수집된 청년정책 데이터가 없습니다. 관리자 테스트에서 실제 공공데이터 API 수집 및 인덱싱을 먼저 실행해주세요.";
+            "아직 수집된 청년정책 데이터가 없습니다. 관리자 테스트에서 실제 공공데이터 API 수집을 먼저 실행해주세요.";
     private static final String NO_INDEXED_YOUTH_DATA =
-            "청년정책 데이터는 저장되어 있지만 아직 인덱싱되지 않았습니다. 관리자 테스트에서 실제 공공데이터 API 인덱싱을 먼저 실행해주세요.";
+            "청년정책 데이터는 저장되어 있지만 아직 인덱싱되지 않았습니다. 관리자 테스트에서 실제 정책 데이터 인덱싱을 먼저 실행해주세요.";
     private static final String NO_VECTOR_RESULT =
             "현재 인덱싱된 실제 정책 데이터에서 질문과 관련된 청년 지원 정책을 찾지 못했습니다.";
     private static final String NO_FILTERED_RESULT =

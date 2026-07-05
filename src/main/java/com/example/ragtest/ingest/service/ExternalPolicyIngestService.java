@@ -34,9 +34,6 @@ import java.util.function.Function;
 @Service
 public class ExternalPolicyIngestService {
 
-    private static final int DEFAULT_PAGE_SIZE = 40;
-    private static final int DEFAULT_MAX_PAGES = 2;
-    private static final int DEFAULT_MAX_ITEMS_PER_SOURCE = 100;
     private static final List<String> PUBLIC_SERVICE_KEYWORDS = List.of("청년", "취업", "구직", "주거", "월세", "자산", "창업");
 
     private final PublicServiceApiClient publicServiceApiClient;
@@ -74,17 +71,22 @@ public class ExternalPolicyIngestService {
 
     @Transactional
     public IngestResult ingestPublicYouthServices() {
+        return ingestPublicYouthServices(IngestOptions.defaults());
+    }
+
+    @Transactional
+    public IngestResult ingestPublicYouthServices(IngestOptions options) {
         Counter counter = new Counter();
         Set<String> seenIds = new HashSet<>();
         for (String keyword : PUBLIC_SERVICE_KEYWORDS) {
-            for (int page = 1; page <= DEFAULT_MAX_PAGES && counter.fetched < DEFAULT_MAX_ITEMS_PER_SOURCE; page++) {
-                JsonNode response = publicServiceApiClient.fetchList(page, DEFAULT_PAGE_SIZE, keyword);
+            for (int page = 1; page <= options.maxPages() && counter.fetched < options.maxItems(); page++) {
+                JsonNode response = publicServiceApiClient.fetchList(page, options.pageSize(), keyword);
                 List<JsonNode> listItems = items(response);
                 if (listItems.isEmpty()) {
                     break;
                 }
                 for (JsonNode item : listItems) {
-                    if (counter.fetched >= DEFAULT_MAX_ITEMS_PER_SOURCE) {
+                    if (counter.fetched >= options.maxItems()) {
                         break;
                     }
                     ExternalPolicyRecord listRecord = publicServiceNormalizer.normalizeToRecord(item);
@@ -103,11 +105,17 @@ public class ExternalPolicyIngestService {
 
     @Transactional
     public IngestResult ingestLocalWelfareServices() {
+        return ingestLocalWelfareServices(IngestOptions.defaults());
+    }
+
+    @Transactional
+    public IngestResult ingestLocalWelfareServices(IngestOptions options) {
         try {
             return ingestPagedItems(
-                    page -> localWelfareApiClient.fetchList(page, DEFAULT_PAGE_SIZE),
+                    page -> localWelfareApiClient.fetchList(page, options.pageSize()),
                     localWelfareApiClient::fetchDetail,
-                    localWelfareNormalizer::normalizeToRecord
+                    localWelfareNormalizer::normalizeToRecord,
+                    options
             );
         } catch (RestClientResponseException exception) {
             throw new BusinessException("지자체복지서비스 API 호출 실패: HTTP " + exception.getStatusCode().value()
@@ -117,11 +125,17 @@ public class ExternalPolicyIngestService {
 
     @Transactional
     public IngestResult ingestCentralWelfareServices() {
+        return ingestCentralWelfareServices(IngestOptions.defaults());
+    }
+
+    @Transactional
+    public IngestResult ingestCentralWelfareServices(IngestOptions options) {
         try {
             return ingestPagedItems(
-                    page -> centralWelfareApiClient.fetchList(page, DEFAULT_PAGE_SIZE),
+                    page -> centralWelfareApiClient.fetchList(page, options.pageSize()),
                     centralWelfareApiClient::fetchDetail,
-                    centralWelfareNormalizer::normalizeToRecord
+                    centralWelfareNormalizer::normalizeToRecord,
+                    options
             );
         } catch (RestClientResponseException exception) {
             throw new BusinessException("중앙부처복지서비스 API 호출 실패: HTTP " + exception.getStatusCode().value()
@@ -132,18 +146,19 @@ public class ExternalPolicyIngestService {
     private IngestResult ingestPagedItems(
             Function<Integer, JsonNode> listFetcher,
             Function<String, JsonNode> detailFetcher,
-            RecordNormalizer normalizer
+            RecordNormalizer normalizer,
+            IngestOptions options
     ) {
         Counter counter = new Counter();
         Set<String> seenIds = new HashSet<>();
-        for (int page = 1; page <= DEFAULT_MAX_PAGES && counter.fetched < DEFAULT_MAX_ITEMS_PER_SOURCE; page++) {
+        for (int page = 1; page <= options.maxPages() && counter.fetched < options.maxItems(); page++) {
             JsonNode response = listFetcher.apply(page);
             List<JsonNode> listItems = items(response);
             if (listItems.isEmpty()) {
                 break;
             }
             for (JsonNode item : listItems) {
-                if (counter.fetched >= DEFAULT_MAX_ITEMS_PER_SOURCE) {
+                if (counter.fetched >= options.maxItems()) {
                     break;
                 }
                 ExternalPolicyRecord listRecord = normalizer.normalize(item);
@@ -214,6 +229,9 @@ public class ExternalPolicyIngestService {
         );
         boolean youthRelated = youthPolicyFilter.isYouthRelated(policy);
         policy.updateYouthRelated(youthRelated);
+        if (youthRelated) {
+            policy.markUnindexed();
+        }
         Policy saved = policyRepository.save(policy);
         rawPayloadRepository.save(PolicyRawPayload.create(saved, record.sourceType(), record.externalId(), record.rawPayload()));
         return youthRelated;

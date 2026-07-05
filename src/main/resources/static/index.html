@@ -41,14 +41,16 @@
       <div class="admin-grid">
         <button class="secondary-button" data-action="configStatus">환경변수 상태 확인</button>
         <button class="secondary-button" data-action="ragStatus">RAG 데이터 상태 확인</button>
-        <button class="secondary-button" data-action="ingestPublicService">행정안전부 공공서비스 API 수집 및 인덱싱</button>
-        <button class="secondary-button" data-action="ingestLocalWelfare">지자체복지서비스 API 수집 및 인덱싱</button>
-        <button class="secondary-button" data-action="ingestCentralWelfare">중앙부처복지서비스 API 수집 및 인덱싱</button>
-        <button class="primary-button" data-action="ingestAll">공공데이터 API 전체 수집 및 인덱싱</button>
-        <button class="secondary-button" data-action="reindexReal">실제 정책 데이터 재인덱싱</button>
+        <button class="primary-button" data-action="ingestAll" data-job-type="INGEST_ALL">공공데이터 API 전체 수집 시작</button>
+        <button class="secondary-button" data-action="ingestPublicService" data-job-type="INGEST_PUBLIC_SERVICE">행정안전부 공공서비스 API 수집 시작</button>
+        <button class="secondary-button" data-action="ingestLocalWelfare" data-job-type="INGEST_LOCAL_WELFARE">지자체복지서비스 API 수집 시작</button>
+        <button class="secondary-button" data-action="ingestCentralWelfare" data-job-type="INGEST_CENTRAL_WELFARE">중앙부처복지서비스 API 수집 시작</button>
+        <button class="primary-button" data-action="indexReal" data-job-type="INDEX_REAL">실제 정책 데이터 인덱싱 시작</button>
+        <button class="secondary-button" data-action="reindexReal" data-job-type="REINDEX_REAL">실제 정책 데이터 재인덱싱 시작</button>
         <button class="secondary-button" data-action="loadPolicies">저장된 정책 목록 불러오기</button>
       </div>
       <div id="adminResult" class="message"></div>
+      <div id="jobStatusBox" class="job-status-list"></div>
       <div id="configStatusList" class="status-list"></div>
       <div id="ragStatusBox" class="rag-status"></div>
     </details>
@@ -57,10 +59,20 @@
   <section class="panel">
     <div class="panel-title">
       <h2>정책 목록</h2>
-      <label class="inline-check">
-        <input id="youthOnly" type="checkbox" checked>
-        실제 청년 관련만 보기
-      </label>
+      <div class="filter-controls">
+        <label class="inline-check">
+          <input id="youthOnly" type="checkbox" checked>
+          청년 관련만 보기
+        </label>
+        <label class="inline-check">
+          <input id="excludeSample" type="checkbox" checked>
+          샘플 제외
+        </label>
+        <label class="inline-check">
+          <input id="indexedOnly" type="checkbox">
+          인덱싱 완료만 보기
+        </label>
+      </div>
     </div>
     <div id="policyList" class="card-grid"></div>
   </section>

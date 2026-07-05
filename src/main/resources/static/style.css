@@ -241,6 +241,92 @@ textarea {
   display: none;
 }
 
+.job-status-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.job-status-list:empty {
+  display: none;
+}
+
+.job-card {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.job-card.success {
+  border-color: #86c99b;
+}
+
+.job-card.failed {
+  border-color: #ef9a92;
+}
+
+.job-title {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.progress-track {
+  background: #e2e8f0;
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.progress-value {
+  background: #2563eb;
+  height: 100%;
+  min-width: 2px;
+  transition: width 0.25s ease;
+}
+
+.job-card.success .progress-value {
+  background: #16a34a;
+}
+
+.job-card.failed .progress-value {
+  background: #dc2626;
+}
+
+.job-details {
+  display: grid;
+  font-size: 13px;
+  gap: 5px 12px;
+  grid-template-columns: 80px 1fr;
+  margin: 12px 0 0;
+}
+
+.job-details dt {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.job-details dd {
+  margin: 0;
+}
+
+.job-result {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.job-result p + p {
+  margin-top: 5px;
+}
+
+.job-error {
+  color: #b42318;
+  margin-top: 10px;
+}
+
 .status-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -356,9 +442,28 @@ textarea {
   width: auto;
 }
 
+.filter-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.empty-state {
+  color: #64748b;
+  grid-column: 1 / -1;
+  padding: 20px 0;
+  text-align: center;
+}
+
 @media (max-width: 760px) {
   .header,
   .panel-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .filter-controls {
     align-items: flex-start;
     flex-direction: column;
   }

@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +29,8 @@ import java.util.Map;
 @Service
 public class PolicyIndexingService {
 
+    private static final int DEFAULT_INDEX_LIMIT = 30;
+    private static final int MAX_INDEX_LIMIT = 100;
     private static final int CHUNK_SIZE = 1000;
     private static final int CHUNK_OVERLAP = 120;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_DATE;
@@ -56,31 +61,63 @@ public class PolicyIndexingService {
 
     @Transactional
     public int indexUnindexedRealPolicies() {
+        return indexUnindexedRealPolicies(DEFAULT_INDEX_LIMIT, IndexProgressListener.NO_OP);
+    }
+
+    @Transactional
+    public int indexUnindexedRealPolicies(int limit, IndexProgressListener progressListener) {
         requireOpenAiApiKey();
-        List<Policy> policies = policyRepository.findAllBySourceTypeNotAndIndexedFalseAndYouthRelatedTrue(PolicySourceType.SAMPLE);
-        return indexPolicies(policies);
+        List<Policy> policies = policyRepository.findAllBySourceTypeNotAndIndexedFalseAndYouthRelatedTrue(
+                PolicySourceType.SAMPLE,
+                PageRequest.of(0, normalizeLimit(limit), Sort.by("id").ascending())
+        );
+        return indexPolicies(policies, progressListener);
     }
 
     @Transactional
     public int indexUnindexedPolicies(PolicySourceType sourceType) {
+        return indexUnindexedPolicies(sourceType, DEFAULT_INDEX_LIMIT, IndexProgressListener.NO_OP);
+    }
+
+    @Transactional
+    public int indexUnindexedPolicies(PolicySourceType sourceType, int limit, IndexProgressListener progressListener) {
         if (sourceType == PolicySourceType.SAMPLE) {
             return 0;
         }
         requireOpenAiApiKey();
-        List<Policy> policies = policyRepository.findAllBySourceTypeAndIndexedFalseAndYouthRelatedTrue(sourceType);
-        return indexPolicies(policies);
+        List<Policy> policies = policyRepository.findAllBySourceTypeAndIndexedFalseAndYouthRelatedTrue(
+                sourceType,
+                PageRequest.of(0, normalizeLimit(limit), Sort.by("id").ascending())
+        );
+        return indexPolicies(policies, progressListener);
     }
 
     @Transactional
     public int reindexRealYouthPolicies() {
+        return reindexRealYouthPolicies(DEFAULT_INDEX_LIMIT, IndexProgressListener.NO_OP);
+    }
+
+    @Transactional
+    public int reindexRealYouthPolicies(int limit, IndexProgressListener progressListener) {
         requireOpenAiApiKey();
-        clearVectorStore();
         List<Policy> policies = policyRepository.findAllBySourceTypeNotAndYouthRelatedTrue(PolicySourceType.SAMPLE);
-        return indexPolicies(policies);
+        policies.forEach(Policy::markUnindexed);
+        policyRepository.flush();
+        clearVectorStore();
+        List<Policy> selected = policies.stream()
+                .sorted(Comparator.comparing(Policy::getId))
+                .limit(normalizeLimit(limit))
+                .toList();
+        return indexPolicies(selected, progressListener);
     }
 
     private int indexPolicies(List<Policy> policies) {
+        return indexPolicies(policies, IndexProgressListener.NO_OP);
+    }
+
+    private int indexPolicies(List<Policy> policies, IndexProgressListener progressListener) {
         int indexedCount = 0;
+        int total = policies.size();
         for (Policy policy : policies) {
             try {
                 deleteExistingVectors(policy.getId());
@@ -92,6 +129,7 @@ public class PolicyIndexingService {
                 }
                 policy.markIndexed();
                 indexedCount++;
+                progressListener.onProgress(indexedCount, total);
             } catch (Exception exception) {
                 throw new BusinessException("정책 인덱싱 실패 policyId=" + policy.getId()
                         + ", title=" + clean(policy.getTitle())
@@ -99,6 +137,10 @@ public class PolicyIndexingService {
             }
         }
         return indexedCount;
+    }
+
+    private int normalizeLimit(int limit) {
+        return Math.max(1, Math.min(limit, MAX_INDEX_LIMIT));
     }
 
     private void clearVectorStore() {
@@ -235,5 +277,13 @@ public class PolicyIndexingService {
         if (openAiApiKey == null || openAiApiKey.isBlank()) {
             throw new BusinessException("OPENAI_API_KEY가 설정되지 않았습니다.");
         }
+    }
+
+    @FunctionalInterface
+    public interface IndexProgressListener {
+        IndexProgressListener NO_OP = (completed, total) -> {
+        };
+
+        void onProgress(int completed, int total);
     }
 }
