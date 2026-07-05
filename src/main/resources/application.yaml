@@ -1,0 +1,50 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ragtest
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ragtest
+    username: ragtest
+    password: ragtest1234
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:__OPENAI_API_KEY_NOT_SET__}
+      chat:
+        options:
+          model: ${OPENAI_CHAT_MODEL:gpt-4.1-mini}
+          temperature: 0.2
+      embedding:
+        options:
+          model: text-embedding-3-small
+
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536
+        table-name: vector_store
+
+external-api:
+  youth-center:
+    api-key: ${YOUTH_CENTER_API_KEY:}
+  data-go-kr:
+    service-key: ${DATA_GO_KR_SERVICE_KEY:}
+
+logging:
+  level:
+    com.example.ragtest: debug
+    org.hibernate.SQL: debug

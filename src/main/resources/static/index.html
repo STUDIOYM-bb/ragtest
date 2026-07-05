@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>정책 RAG 테스트</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="page">
+  <header class="header">
+    <h1>정책 RAG 테스트</h1>
+    <div id="serverStatus" class="status neutral">서버 연결 확인 중...</div>
+  </header>
+
+  <section class="panel">
+    <div class="panel-title">
+      <h2>관리자 테스트</h2>
+    </div>
+    <button id="indexSampleButton" class="primary-button">실제 공공서비스 API 수집 및 인덱싱</button>
+    <div id="indexResult" class="message"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">
+      <h2>질문하기</h2>
+    </div>
+    <form id="askForm" class="form-grid">
+      <label class="full">
+        질문
+        <textarea id="question" rows="3">수원에 사는 27살 취업준비생이 받을 수 있는 청년 지원 정책 알려줘</textarea>
+      </label>
+      <label>
+        지역
+        <input id="region" value="경기도 수원시">
+      </label>
+      <label>
+        나이
+        <input id="age" type="number" value="27">
+      </label>
+      <label>
+        취업상태
+        <input id="employmentStatus" value="취업준비생">
+      </label>
+      <label>
+        검색 개수
+        <input id="topK" type="number" min="1" max="10" value="5">
+      </label>
+      <div class="full">
+        <button id="askButton" class="primary-button" type="submit">질문하기</button>
+      </div>
+    </form>
+    <div id="askResult" class="answer"></div>
+    <div id="sourceList" class="card-grid"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-title">
+      <h2>정책 목록</h2>
+      <button id="loadPoliciesButton" class="secondary-button">저장된 정책 목록 불러오기</button>
+    </div>
+    <div id="policyList" class="card-grid"></div>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
