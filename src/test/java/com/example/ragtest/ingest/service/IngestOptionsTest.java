@@ -8,7 +8,7 @@ class IngestOptionsTest {
 
     @Test
     void usesLightweightDefaults() {
-        assertThat(IngestOptions.defaults()).isEqualTo(new IngestOptions(1, 20, 50));
+        assertThat(IngestOptions.defaults()).isEqualTo(new IngestOptions(3, 50, 150));
     }
 
     @Test

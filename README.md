@@ -53,10 +53,11 @@ DATA_GO_KR_SERVICE_KEY=실제_공공데이터포털_인증키
 # DATA_GO_KR_PUBLIC_SERVICE_KEY=
 # DATA_GO_KR_LOCAL_WELFARE_KEY=
 # DATA_GO_KR_CENTRAL_WELFARE_KEY=
+# DATA_GO_KR_YOUTH_POLICY_KEY=
 # YOUTH_CENTER_API_KEY=
 ```
 
-공공데이터포털 키는 `DATA_GO_KR_SERVICE_KEY` 하나만 설정해도 세 API가 모두 동작하도록 fallback됩니다. API별 키를 따로 설정하면 해당 API별 키가 우선 적용됩니다.
+공공데이터포털 키는 `DATA_GO_KR_SERVICE_KEY` 하나만 설정해도 data.go.kr 계열 API에 fallback됩니다. API별 키를 따로 설정하면 해당 키가 우선 적용됩니다. 온통청년 Open API는 별도 활용 승인과 키가 필요할 수 있으므로 `YOUTH_CENTER_API_KEY` 설정을 권장합니다. 키가 없어도 서버와 나머지 세 수집기는 정상 실행됩니다.
 
 `application.yaml`은 다음 구조를 사용합니다.
 
@@ -70,6 +71,7 @@ external-api:
     api-key: ${YOUTH_CENTER_API_KEY:}
   data-go-kr:
     service-key: ${DATA_GO_KR_SERVICE_KEY:}
+    youth-policy-key: ${DATA_GO_KR_YOUTH_POLICY_KEY:${DATA_GO_KR_SERVICE_KEY:}}
     public-service-key: ${DATA_GO_KR_PUBLIC_SERVICE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
     local-welfare-key: ${DATA_GO_KR_LOCAL_WELFARE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
     central-welfare-key: ${DATA_GO_KR_CENTRAL_WELFARE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
@@ -153,12 +155,14 @@ POST /api/admin/rag/index-source/{sourceType}
 POST /api/admin/ingest/public-service
 POST /api/admin/ingest/local-welfare
 POST /api/admin/ingest/central-welfare
+POST /api/admin/ingest/youth-center
 POST /api/admin/ingest/all
 GET  /api/admin/jobs/{jobId}
 GET  /api/admin/jobs/latest
 GET  /api/admin/jobs/running
 POST /api/rag/ask
-GET  /api/policies
+POST /api/admin/debug/search-candidates
+GET  /api/policies?keyword=&region=&sourceType=&youthOnly=true&indexedOnly=false&sampleExcluded=true
 ```
 
 ## data.go.kr API 분리
@@ -181,13 +185,40 @@ GET  /api/policies
   - SourceType: `PolicySourceType.CENTRAL_WELFARE`
   - Key: `DATA_GO_KR_CENTRAL_WELFARE_KEY`, fallback `DATA_GO_KR_SERVICE_KEY`
 
+- 온통청년 청년정책 Open API
+  - Client: `YouthCenterApiClient`
+  - Normalizer: `YouthPolicyNormalizer`
+  - SourceType: `PolicySourceType.YOUTH_CENTER`
+  - Key: `YOUTH_CENTER_API_KEY`, fallback `DATA_GO_KR_YOUTH_POLICY_KEY`
+  - 공식 목록 endpoint: `https://www.youthcenter.go.kr/opi/youthPlcyList.do`
+
+온통청년 연동 기준은 [공식 Open API 이용안내](https://www.youthcenter.go.kr/cmnFooter/openapiIntro/oaiGuide)와 [공식 API 문서](https://www.youthcenter.go.kr/cmnFooter/openapiIntro/oaiDoc)에서 확인할 수 있습니다.
+
 중앙부처복지서비스는 `NationalWelfarelistV001`, `NationalWelfaredetailedV001` 경로를 사용합니다. 지자체복지서비스는 현재 공공데이터포털 Swagger의 `LocalGovernmentWelfareInformations/LcgvWelfarelist`, `LcgvWelfaredetailed` 경로를 사용합니다.
 
 각 수집은 목록을 조회한 뒤 정책별 상세조회 결과를 병합합니다. 상세조회 한 건이 실패해도 목록 정보로 저장을 계속하며, 실패 내용은 raw payload의 `_detailFetchError`에 남깁니다. 수집은 DB 저장까지만 수행하고 OpenAI Embedding이나 `vector_store` 인덱싱은 호출하지 않습니다.
 
 수집과 인덱싱 API는 메모리 기반 백그라운드 Job을 시작한 뒤 `jobId`를 즉시 반환합니다. 프론트는 `/api/admin/jobs/{jobId}`를 1.5초 간격으로 조회해 진행률과 성공/실패를 표시합니다. 서버 재시작 시 메모리 Job 이력은 초기화됩니다.
 
-기본 수집 제한은 `maxPages=1`, `pageSize=20`, `maxItems=50`이며 각각 최대 5, 100, 300입니다. 기본 인덱싱 제한은 `limit=30`, 최대 100입니다. 미인덱싱 정책이 남아 있으면 상태 화면의 `unindexedYouthPolicies`를 확인하고 인덱싱을 다시 실행합니다.
+기본 수집 제한은 `maxPages=3`, `pageSize=50`, `maxItems=150`이며 각각 최대 5, 100, 300입니다. 기본 인덱싱 제한은 `limit=30`, 최대 100입니다. 관리자 화면에서 값을 줄여 빠르게 검증할 수 있습니다. 미인덱싱 정책이 남아 있으면 상태 화면의 `unindexedYouthPolicies`를 확인하고 인덱싱을 다시 실행합니다.
+
+## 하이브리드 검색과 조건 매칭
+
+질문은 규칙 기반으로 지역, 나이, 대상, 학업상태, 취업상태, 생애단계, 경제상태, 관심분야와 검색 키워드로 변환됩니다. 요청 JSON에 `region`, `age`, `employmentStatus`를 직접 보내면 직접 입력값이 우선합니다. 추출되지 않은 값은 `null`이며 필터에 사용하지 않습니다.
+
+후보는 다음 두 경로에서 생성한 뒤 `policyId`로 병합합니다.
+
+1. 질문 embedding 1회로 pgvector 후보 조회
+2. 정책명, 요약, 지원대상, 선정기준, 신청방법, 카테고리, 지역에 대한 DB 키워드 후보 조회
+3. 지역·나이·대상 상태의 명확한 불일치는 제외
+4. 정보가 불충분하면 제외하지 않고 `CHECK_REQUIRED`로 분류
+5. 출처, 벡터/키워드 동시 적중, 사용자 조건, 관심분야를 점수화해 재정렬
+
+관리자 화면의 `검색 후보 디버그`는 vector/keyword/merged/final/excluded 후보와 점수·사유를 표시합니다. 정책 목록에서는 키워드, 지역, sourceType, 청년 관련 여부, 인덱싱 여부, SAMPLE 제외 조건으로 실제 DB 수집 상태를 확인할 수 있습니다.
+
+## Google 검색과 결과가 다른 이유
+
+Google은 웹 전체를 검색하지만 이 프로젝트는 관리자가 수집하고 인덱싱한 공공 API 데이터만 검색합니다. API에 없는 정책, 아직 수집하지 않은 정책, `indexed=false` 정책은 답변에 나오지 않습니다. 품질을 높이려면 수집 source와 수집량을 늘리고 미인덱싱 건수를 해소해야 합니다. 온통청년 API를 연결하면 청년정책 전용 후보가 늘어나며, 수집 후 별도 인덱싱 Job을 실행해야 검색에 반영됩니다.
 
 `실제 정책 데이터 재인덱싱`은 기존 `vector_store` 내용을 트랜잭션 안에서 정리하고, 실제 API 출처이면서 청년 관련인 정책만 다시 인덱싱합니다.
 

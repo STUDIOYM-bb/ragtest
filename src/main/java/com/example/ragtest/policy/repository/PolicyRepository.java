@@ -4,11 +4,14 @@ import com.example.ragtest.policy.domain.Policy;
 import com.example.ragtest.policy.domain.PolicySourceType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
 
-public interface PolicyRepository extends JpaRepository<Policy, Long> {
+public interface PolicyRepository extends JpaRepository<Policy, Long>, JpaSpecificationExecutor<Policy> {
     Optional<Policy> findBySourceTypeAndExternalId(PolicySourceType sourceType, String externalId);
 
     List<Policy> findAllByIndexedFalse();
@@ -42,4 +45,25 @@ public interface PolicyRepository extends JpaRepository<Policy, Long> {
     long countBySourceTypeNotAndYouthRelatedTrue(PolicySourceType sourceType);
 
     long countBySourceTypeNotAndYouthRelatedTrueAndIndexedTrue(PolicySourceType sourceType);
+
+    @Query("""
+            select p from Policy p
+            where p.sourceType <> :excludedSource
+              and p.youthRelated = true
+              and p.indexed = true
+              and (
+                lower(coalesce(p.title, '')) like lower(concat('%', :keyword, '%')) or
+                lower(coalesce(p.summary, '')) like lower(concat('%', :keyword, '%')) or
+                lower(coalesce(p.supportTarget, '')) like lower(concat('%', :keyword, '%')) or
+                lower(coalesce(p.selectionCriteria, '')) like lower(concat('%', :keyword, '%')) or
+                lower(coalesce(p.applicationMethod, '')) like lower(concat('%', :keyword, '%')) or
+                lower(coalesce(p.categoryName, '')) like lower(concat('%', :keyword, '%')) or
+                lower(coalesce(p.regionName, '')) like lower(concat('%', :keyword, '%'))
+              )
+            """)
+    List<Policy> searchIndexedYouthPoliciesByKeyword(
+            @Param("excludedSource") PolicySourceType excludedSource,
+            @Param("keyword") String keyword,
+            Pageable pageable
+    );
 }

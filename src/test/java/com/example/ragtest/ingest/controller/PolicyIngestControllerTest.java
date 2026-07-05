@@ -28,7 +28,7 @@ class PolicyIngestControllerTest {
     private final PolicyRepository policyRepository = mock(PolicyRepository.class);
     private final AdminJobManager jobManager = new AdminJobManager();
     private final PolicyIngestController controller = new PolicyIngestController(
-            ingestService, indexingService, policyRepository, jobManager, "key", "key", "key"
+            ingestService, indexingService, policyRepository, jobManager, "key", "key", "key", "", ""
     );
 
     @AfterEach

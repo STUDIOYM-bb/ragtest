@@ -18,6 +18,7 @@ public class ConfigStatusController {
     private final String localWelfareKey;
     private final String centralWelfareKey;
     private final String youthCenterApiKey;
+    private final String youthPolicyKey;
 
     public ConfigStatusController(
             @Value("${spring.ai.openai.api-key:}") String openAiApiKey,
@@ -25,7 +26,8 @@ public class ConfigStatusController {
             @Value("${external-api.data-go-kr.public-service-key:}") String publicServiceKey,
             @Value("${external-api.data-go-kr.local-welfare-key:}") String localWelfareKey,
             @Value("${external-api.data-go-kr.central-welfare-key:}") String centralWelfareKey,
-            @Value("${external-api.youth-center.api-key:}") String youthCenterApiKey
+            @Value("${external-api.youth-center.api-key:}") String youthCenterApiKey,
+            @Value("${external-api.data-go-kr.youth-policy-key:}") String youthPolicyKey
     ) {
         this.openAiApiKey = openAiApiKey;
         this.dataGoKrServiceKey = dataGoKrServiceKey;
@@ -33,6 +35,7 @@ public class ConfigStatusController {
         this.localWelfareKey = localWelfareKey;
         this.centralWelfareKey = centralWelfareKey;
         this.youthCenterApiKey = youthCenterApiKey;
+        this.youthPolicyKey = youthPolicyKey;
     }
 
     @GetMapping("/status")
@@ -43,7 +46,7 @@ public class ConfigStatusController {
                 "publicServiceConfigured", hasText(publicServiceKey),
                 "localWelfareConfigured", hasText(localWelfareKey),
                 "centralWelfareConfigured", hasText(centralWelfareKey),
-                "youthCenterConfigured", hasText(youthCenterApiKey)
+                "youthCenterConfigured", hasText(youthCenterApiKey) || hasText(youthPolicyKey)
         ), "환경변수 설정 상태 조회 완료");
     }
 

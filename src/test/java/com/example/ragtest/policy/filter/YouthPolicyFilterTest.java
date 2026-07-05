@@ -27,11 +27,11 @@ class YouthPolicyFilterTest {
     }
 
     @Test
-    void doesNotTreatEveryStartupPolicyAsYouthPolicy() {
+    void includesStartupPolicyAsYouthCandidateForBroadFirstStageFilter() {
         Policy policy = Policy.create(PolicySourceType.PUBLIC_SERVICE, "startup", "일반 창업 지원");
         policy.updateFrom("일반 창업 지원", "예비창업자에게 사업화를 지원", "전 연령", "", "", null, null,
                 "전국", "창업", "https://example.com", "hash");
 
-        assertThat(filter.isYouthRelated(policy)).isFalse();
+        assertThat(filter.isYouthRelated(policy)).isTrue();
     }
 }
