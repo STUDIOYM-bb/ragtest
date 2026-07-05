@@ -5,8 +5,10 @@ import com.example.ragtest.common.response.ApiResponse;
 import com.example.ragtest.ingest.service.ExternalPolicyIngestService;
 import com.example.ragtest.ingest.service.IngestResult;
 import com.example.ragtest.ingest.service.PolicyIndexingService;
-import com.example.ragtest.ingest.service.SamplePolicyService;
+import com.example.ragtest.policy.domain.PolicySourceType;
+import com.example.ragtest.policy.repository.PolicyRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,100 +20,103 @@ import java.util.Map;
 @RequestMapping("/api/admin")
 public class PolicyIngestController {
 
-    private final SamplePolicyService samplePolicyService;
     private final ExternalPolicyIngestService externalPolicyIngestService;
     private final PolicyIndexingService policyIndexingService;
-    private final String youthCenterApiKey;
-    private final String dataGoKrServiceKey;
+    private final PolicyRepository policyRepository;
+    private final String publicServiceKey;
+    private final String localWelfareKey;
+    private final String centralWelfareKey;
 
     public PolicyIngestController(
-            SamplePolicyService samplePolicyService,
             ExternalPolicyIngestService externalPolicyIngestService,
             PolicyIndexingService policyIndexingService,
-            @Value("${external-api.youth-center.api-key:}") String youthCenterApiKey,
-            @Value("${external-api.data-go-kr.service-key:}") String dataGoKrServiceKey
+            PolicyRepository policyRepository,
+            @Value("${external-api.data-go-kr.public-service-key:}") String publicServiceKey,
+            @Value("${external-api.data-go-kr.local-welfare-key:}") String localWelfareKey,
+            @Value("${external-api.data-go-kr.central-welfare-key:}") String centralWelfareKey
     ) {
-        this.samplePolicyService = samplePolicyService;
         this.externalPolicyIngestService = externalPolicyIngestService;
         this.policyIndexingService = policyIndexingService;
-        this.youthCenterApiKey = youthCenterApiKey;
-        this.dataGoKrServiceKey = dataGoKrServiceKey;
+        this.policyRepository = policyRepository;
+        this.publicServiceKey = publicServiceKey;
+        this.localWelfareKey = localWelfareKey;
+        this.centralWelfareKey = centralWelfareKey;
     }
 
-    @PostMapping("/rag/index-sample")
-    public ApiResponse<IngestResult> indexSample() {
-        int savedCount = samplePolicyService.upsertSamplePolicies();
-        int indexedCount = policyIndexingService.indexUnindexedPolicies();
-        return ApiResponse.ok(new IngestResult(savedCount, indexedCount), "샘플 정책 데이터 생성 및 인덱싱 완료");
+    @GetMapping("/rag/status")
+    public ApiResponse<Map<String, Object>> ragStatus() {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("totalPolicies", policyRepository.count());
+        data.put("realPolicies", policyRepository.countBySourceTypeNot(PolicySourceType.SAMPLE));
+        data.put("samplePolicies", policyRepository.countBySourceType(PolicySourceType.SAMPLE));
+        data.put("youthRelatedPolicies", policyRepository.countBySourceTypeNotAndYouthRelatedTrue(PolicySourceType.SAMPLE));
+        data.put("indexedYouthPolicies", policyRepository.countBySourceTypeNotAndYouthRelatedTrueAndIndexedTrue(PolicySourceType.SAMPLE));
+
+        Map<String, Object> bySourceType = new LinkedHashMap<>();
+        for (PolicySourceType sourceType : PolicySourceType.values()) {
+            bySourceType.put(sourceType.name(), Map.of(
+                    "total", policyRepository.countBySourceType(sourceType),
+                    "youthRelated", policyRepository.countBySourceTypeAndYouthRelatedTrue(sourceType),
+                    "indexed", policyRepository.countBySourceTypeAndYouthRelatedTrueAndIndexedTrue(sourceType)
+            ));
+        }
+        data.put("bySourceType", bySourceType);
+        return ApiResponse.ok(data, "RAG 데이터 상태 조회 완료");
     }
 
     @PostMapping("/rag/index")
     public ApiResponse<IngestResult> index() {
-        int indexedCount = policyIndexingService.indexUnindexedPolicies();
-        return ApiResponse.ok(new IngestResult(0, indexedCount), "정책 인덱싱 완료");
+        int indexedCount = policyIndexingService.indexUnindexedRealPolicies();
+        return ApiResponse.ok(new IngestResult(0, 0, indexedCount, 0), "실제 정책 데이터 인덱싱 완료");
     }
 
-    @PostMapping("/ingest/youth-center")
-    public ApiResponse<Map<String, Object>> ingestYouthCenter() {
-        requireKey(youthCenterApiKey, "온통청년 API 키가 설정되지 않았습니다.");
-        return ApiResponse.ok(Map.of("savedCount", 0), "온통청년 API는 키 설정 확인까지 완료되었습니다. 실제 저장 연동은 다음 단계에서 구현합니다.");
+    @PostMapping("/rag/reindex-real")
+    public ApiResponse<IngestResult> reindexReal() {
+        int indexedCount = policyIndexingService.reindexRealYouthPolicies();
+        return ApiResponse.ok(new IngestResult(0, 0, indexedCount, 0), "실제 정책 데이터 재인덱싱 완료");
     }
 
     @PostMapping("/ingest/public-service")
     public ApiResponse<IngestResult> ingestPublicService() {
-        requireDataGoKrKey();
-        int savedCount = externalPolicyIngestService.ingestPublicYouthServices();
-        int indexedCount = policyIndexingService.indexUnindexedPolicies();
-        return ApiResponse.ok(new IngestResult(savedCount, indexedCount), "공공서비스 실제 API 수집 및 인덱싱 완료");
+        requireKey(publicServiceKey, "DATA_GO_KR_PUBLIC_SERVICE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.");
+        IngestResult ingestResult = externalPolicyIngestService.ingestPublicYouthServices();
+        int indexedCount = policyIndexingService.indexUnindexedPolicies(PolicySourceType.PUBLIC_SERVICE);
+        return ApiResponse.ok(ingestResult.withIndexedCount(indexedCount), "행정안전부 공공서비스 API 수집 및 인덱싱 완료");
     }
 
     @PostMapping("/ingest/local-welfare")
     public ApiResponse<IngestResult> ingestLocalWelfare() {
-        requireDataGoKrKey();
-        int savedCount = externalPolicyIngestService.ingestLocalWelfareServices();
-        int indexedCount = policyIndexingService.indexUnindexedPolicies();
-        return ApiResponse.ok(new IngestResult(savedCount, indexedCount), "지자체복지서비스 실제 API 수집 및 인덱싱 완료");
+        requireKey(localWelfareKey, "DATA_GO_KR_LOCAL_WELFARE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.");
+        IngestResult ingestResult = externalPolicyIngestService.ingestLocalWelfareServices();
+        int indexedCount = policyIndexingService.indexUnindexedPolicies(PolicySourceType.LOCAL_WELFARE);
+        return ApiResponse.ok(ingestResult.withIndexedCount(indexedCount), "지자체복지서비스 API 수집 및 인덱싱 완료");
     }
 
     @PostMapping("/ingest/central-welfare")
     public ApiResponse<IngestResult> ingestCentralWelfare() {
-        requireDataGoKrKey();
-        int savedCount = externalPolicyIngestService.ingestCentralWelfareServices();
-        int indexedCount = policyIndexingService.indexUnindexedPolicies();
-        return ApiResponse.ok(new IngestResult(savedCount, indexedCount), "중앙부처복지서비스 실제 API 수집 및 인덱싱 완료");
+        requireKey(centralWelfareKey, "DATA_GO_KR_CENTRAL_WELFARE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.");
+        IngestResult ingestResult = externalPolicyIngestService.ingestCentralWelfareServices();
+        int indexedCount = policyIndexingService.indexUnindexedPolicies(PolicySourceType.CENTRAL_WELFARE);
+        return ApiResponse.ok(ingestResult.withIndexedCount(indexedCount), "중앙부처복지서비스 API 수집 및 인덱싱 완료");
     }
 
     @PostMapping("/ingest/all")
     public ApiResponse<Map<String, Object>> ingestAll() {
-        requireDataGoKrKey();
+        requireKey(publicServiceKey, "DATA_GO_KR_PUBLIC_SERVICE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.");
+        requireKey(localWelfareKey, "DATA_GO_KR_LOCAL_WELFARE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.");
+        requireKey(centralWelfareKey, "DATA_GO_KR_CENTRAL_WELFARE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.");
+
         Map<String, Object> result = new LinkedHashMap<>();
+        IngestResult publicService = externalPolicyIngestService.ingestPublicYouthServices();
+        result.put("publicService", publicService.withIndexedCount(policyIndexingService.indexUnindexedPolicies(PolicySourceType.PUBLIC_SERVICE)));
 
-        int publicSavedCount = externalPolicyIngestService.ingestPublicYouthServices();
-        result.put("publicServiceSavedCount", publicSavedCount);
+        IngestResult localWelfare = externalPolicyIngestService.ingestLocalWelfareServices();
+        result.put("localWelfare", localWelfare.withIndexedCount(policyIndexingService.indexUnindexedPolicies(PolicySourceType.LOCAL_WELFARE)));
 
-        result.put("youthCenter", hasText(youthCenterApiKey)
-                ? "키 설정됨: 실제 저장 연동은 다음 단계에서 구현"
-                : "스킵: 온통청년 API 키가 설정되지 않았습니다.");
+        IngestResult centralWelfare = externalPolicyIngestService.ingestCentralWelfareServices();
+        result.put("centralWelfare", centralWelfare.withIndexedCount(policyIndexingService.indexUnindexedPolicies(PolicySourceType.CENTRAL_WELFARE)));
 
-        try {
-            result.put("localWelfareSavedCount", externalPolicyIngestService.ingestLocalWelfareServices());
-        } catch (BusinessException exception) {
-            result.put("localWelfare", exception.getMessage());
-        }
-
-        try {
-            result.put("centralWelfareSavedCount", externalPolicyIngestService.ingestCentralWelfareServices());
-        } catch (BusinessException exception) {
-            result.put("centralWelfare", exception.getMessage());
-        }
-
-        int indexedCount = policyIndexingService.indexUnindexedPolicies();
-        result.put("indexedCount", indexedCount);
-        return ApiResponse.ok(result, "실제 정책 API 수집 및 인덱싱 완료");
-    }
-
-    private void requireDataGoKrKey() {
-        requireKey(dataGoKrServiceKey, "공공데이터포털 API 키가 설정되지 않았습니다.");
+        return ApiResponse.ok(result, "공공데이터 API 전체 수집 및 인덱싱 완료");
     }
 
     private void requireKey(String key, String message) {

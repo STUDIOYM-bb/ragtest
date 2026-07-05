@@ -48,6 +48,10 @@ h2 {
   box-shadow: 0 10px 24px rgba(31, 41, 55, 0.06);
 }
 
+.primary-panel {
+  border-color: #b9c7dd;
+}
+
 .panel-title {
   display: flex;
   align-items: center;
@@ -56,11 +60,33 @@ h2 {
   margin-bottom: 16px;
 }
 
+summary {
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.admin-grid button {
+  width: 100%;
+}
+
 .status,
 .message {
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.message {
+  margin-top: 12px;
 }
 
 .message:empty {
@@ -106,9 +132,8 @@ button:disabled {
   color: #ffffff;
 }
 
-.form-grid {
+.ask-form {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
 }
 
@@ -124,6 +149,17 @@ label {
   grid-column: 1 / -1;
 }
 
+.ask-actions {
+  align-items: end;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.topk-field {
+  width: 120px;
+}
+
 input,
 textarea {
   width: 100%;
@@ -134,7 +170,39 @@ textarea {
 }
 
 textarea {
+  line-height: 1.5;
   resize: vertical;
+}
+
+.condition-box {
+  margin-top: 14px;
+}
+
+.condition-box:empty {
+  display: none;
+}
+
+.condition-title {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.condition-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.condition-items span {
+  background: #eef6ff;
+  border: 1px solid #cfe2ff;
+  border-radius: 999px;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 5px 10px;
 }
 
 .answer {
@@ -156,6 +224,84 @@ textarea {
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 14px;
   margin-top: 16px;
+}
+
+.status-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.rag-status {
+  margin-top: 12px;
+}
+
+.rag-status:empty {
+  display: none;
+}
+
+.status-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.summary-tile,
+.source-status-card {
+  background: #f8fafc;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.summary-tile span {
+  color: #475569;
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.summary-tile strong {
+  color: #111827;
+  font-size: 22px;
+}
+
+.source-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.source-status-card h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.source-status-card p {
+  color: #475569;
+  line-height: 1.5;
+}
+
+.status-row {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 9px 11px;
+}
+
+.status-row.ok strong {
+  color: #166534;
+}
+
+.status-row.missing strong {
+  color: #b42318;
 }
 
 .card {
@@ -199,6 +345,17 @@ textarea {
   word-break: break-all;
 }
 
+.inline-check {
+  align-items: center;
+  flex-direction: row;
+  font-size: 14px;
+  gap: 8px;
+}
+
+.inline-check input {
+  width: auto;
+}
+
 @media (max-width: 760px) {
   .header,
   .panel-title {
@@ -206,7 +363,16 @@ textarea {
     flex-direction: column;
   }
 
-  .form-grid {
+  .ask-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topk-field {
+    width: 100%;
+  }
+
+  .admin-grid {
     grid-template-columns: 1fr;
   }
 }

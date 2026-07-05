@@ -6,6 +6,11 @@ import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Component
 public class CentralWelfareApiClient {
@@ -18,7 +23,7 @@ public class CentralWelfareApiClient {
 
     public CentralWelfareApiClient(
             RestClient.Builder restClientBuilder,
-            @Value("${external-api.data-go-kr.service-key:}") String serviceKey
+            @Value("${external-api.data-go-kr.central-welfare-key:}") String serviceKey
     ) {
         this.restClient = restClientBuilder.baseUrl(BASE_URL).build();
         this.serviceKey = serviceKey;
@@ -27,11 +32,12 @@ public class CentralWelfareApiClient {
     public JsonNode fetchList(int page, int size) {
         requireServiceKey();
         String xml = restClient.get()
-                .uri(uriBuilder -> uriBuilder.path("/NationalWelfarelist")
-                        .queryParam("serviceKey", serviceKey)
+                .uri(buildUri("/NationalWelfarelistV001")
+                        .queryParam("callTp", "L")
                         .queryParam("pageNo", page)
                         .queryParam("numOfRows", size)
-                        .build())
+                        .queryParam("srchKeyCode", "003")
+                        .build(true).toUri())
                 .retrieve()
                 .body(String.class);
         return readXml(xml);
@@ -40,10 +46,10 @@ public class CentralWelfareApiClient {
     public JsonNode fetchDetail(String externalId) {
         requireServiceKey();
         String xml = restClient.get()
-                .uri(uriBuilder -> uriBuilder.path("/NationalWelfaredetailed")
-                        .queryParam("serviceKey", serviceKey)
+                .uri(buildUri("/NationalWelfaredetailedV001")
+                        .queryParam("callTp", "D")
                         .queryParam("servId", externalId)
-                        .build())
+                        .build(true).toUri())
                 .retrieve()
                 .body(String.class);
         return readXml(xml);
@@ -59,7 +65,19 @@ public class CentralWelfareApiClient {
 
     private void requireServiceKey() {
         if (serviceKey == null || serviceKey.isBlank()) {
-            throw new BusinessException("공공데이터포털 API 키가 설정되지 않았습니다.");
+            throw new BusinessException("DATA_GO_KR_CENTRAL_WELFARE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.");
         }
+    }
+
+    private UriComponentsBuilder buildUri(String path) {
+        return UriComponentsBuilder.fromUri(URI.create(BASE_URL + path))
+                .queryParam("serviceKey", encodedServiceKey());
+    }
+
+    private String encodedServiceKey() {
+        if (serviceKey.matches(".*%[0-9a-fA-F]{2}.*")) {
+            return serviceKey;
+        }
+        return URLEncoder.encode(serviceKey, StandardCharsets.UTF_8).replace("+", "%20");
     }
 }

@@ -1,49 +1,107 @@
 # ragtest
 
-Java 21, Spring Boot 3.5.x 기반 대한민국 청년정책/복지정책 RAG 테스트 MVP입니다.
+Java 21, Spring Boot 3.5.x 기반 실제 공공데이터 청년정책 RAG 테스트 프로젝트입니다.
 
-현재 구현은 공공데이터포털의 **행정안전부 대한민국 공공서비스 정보 API**에서 실제 정책 데이터를 수집하고, OpenAI Embedding으로 변환한 뒤 PostgreSQL pgvector에 저장합니다. 사용자는 브라우저 화면에서 정책 질문을 입력하고, 검색된 정책 데이터만 근거로 한 한국어 RAG 답변을 확인할 수 있습니다.
+이 프로젝트의 기본 흐름은 샘플 정책 데이터를 사용하지 않습니다. 관리자 기능으로 실제 공공데이터 API에서 정책을 먼저 수집하고, 청년 관련 정책만 `vector_store`에 인덱싱한 뒤 사용자가 이미 인덱싱된 실제 정책 데이터에 질문합니다.
 
 ## Tech Stack
 
 - Java 21
 - Spring Boot 3.5.x
-- Gradle Groovy
-- PostgreSQL 16
-- pgvector
-- Spring AI
+- PostgreSQL + pgvector
 - OpenAI Chat / Embedding
 - Spring Boot static resources
 
+## RAG 동작 방식
+
+RAG는 질문 시점에 외부 공공데이터 API를 매번 호출하지 않습니다.
+
+1. 관리자 기능 또는 스케줄러가 실제 공공데이터 API를 호출합니다.
+2. 목록조회와 가능한 상세조회를 합쳐 정책 데이터를 정규화합니다.
+3. 청년 관련 여부를 판정해 DB에 저장합니다.
+4. `youthRelated=true`인 실제 정책만 벡터 인덱싱합니다.
+5. 사용자는 인덱싱된 실제 정책 데이터 안에서 자연어로 질문합니다.
+
+검색 대상 조건은 `sourceType != SAMPLE`, `youthRelated = true`, `indexed = true`입니다.
+
 ## Environment Variables
 
-필수:
+저장소 루트의 `.env.example`을 `.env`로 복사한 뒤 실제 키를 입력합니다. `.env`는 Git에 커밋되지 않습니다.
+
+macOS/Linux:
 
 ```bash
-OPENAI_API_KEY=your-openai-api-key
-DATA_GO_KR_SERVICE_KEY=your-data-go-kr-service-key
+cp .env.example .env
 ```
 
-선택:
+Windows PowerShell:
 
-```bash
+```powershell
+Copy-Item .env.example .env
+```
+
+`.env` 내용:
+
+```properties
+OPENAI_API_KEY=실제_OPENAI_API_KEY
 OPENAI_CHAT_MODEL=gpt-4.1-mini
-YOUTH_CENTER_API_KEY=your-youth-center-api-key
+DATA_GO_KR_SERVICE_KEY=실제_공공데이터포털_인증키
+
+# 선택 사항
+# DATA_GO_KR_PUBLIC_SERVICE_KEY=
+# DATA_GO_KR_LOCAL_WELFARE_KEY=
+# DATA_GO_KR_CENTRAL_WELFARE_KEY=
+# YOUTH_CENTER_API_KEY=
 ```
 
-API 키는 코드에 하드코딩하지 않고 `src/main/resources/application.yaml`에서 환경변수 placeholder로 읽습니다.
+공공데이터포털 키는 `DATA_GO_KR_SERVICE_KEY` 하나만 설정해도 세 API가 모두 동작하도록 fallback됩니다. API별 키를 따로 설정하면 해당 API별 키가 우선 적용됩니다.
 
-## Run
+`application.yaml`은 다음 구조를 사용합니다.
 
-PostgreSQL pgvector 실행:
+```yaml
+spring:
+  config:
+    import: optional:file:.env[.properties]
+
+external-api:
+  youth-center:
+    api-key: ${YOUTH_CENTER_API_KEY:}
+  data-go-kr:
+    service-key: ${DATA_GO_KR_SERVICE_KEY:}
+    public-service-key: ${DATA_GO_KR_PUBLIC_SERVICE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
+    local-welfare-key: ${DATA_GO_KR_LOCAL_WELFARE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
+    central-welfare-key: ${DATA_GO_KR_CENTRAL_WELFARE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
+```
+
+## 다른 PC 또는 Mac에서 처음 실행
+
+필수 설치 항목:
+
+- Git
+- JDK 21 (`java -version`으로 확인)
+- Docker Desktop 또는 Docker Engine + Compose 플러그인
+
+저장소를 처음 받는 경우:
 
 ```bash
-docker compose -f docker-compose.yml up -d
+git clone https://github.com/STUDIOYM-bb/ragtest.git
+cd ragtest
+cp .env.example .env            # macOS/Linux
+# Copy-Item .env.example .env    # Windows PowerShell
+```
+
+`.env`에 `OPENAI_API_KEY`, `DATA_GO_KR_SERVICE_KEY`를 입력한 다음 PostgreSQL/pgvector를 실행합니다.
+
+```bash
+docker compose up -d
 ```
 
 애플리케이션 실행:
 
+macOS/Linux:
+
 ```bash
+chmod +x gradlew
 ./gradlew bootRun
 ```
 
@@ -53,52 +111,99 @@ Windows PowerShell:
 .\gradlew.bat bootRun
 ```
 
-브라우저 접속:
+macOS에서 Docker Desktop을 사용한다면 Docker Desktop이 완전히 시작된 뒤 `docker compose up -d`를 실행해야 합니다.
+
+브라우저에서 접속합니다.
 
 ```text
 http://localhost:8080
 ```
 
-## Test Flow
+화면에서 다음 순서로 확인합니다.
 
-1. `http://localhost:8080` 접속
-2. `실제 공공서비스 API 수집 및 인덱싱` 클릭
-3. 정책 질문 입력
-4. `질문하기` 클릭
-5. 답변과 근거 정책 sources 확인
-6. `저장된 정책 목록 불러오기`로 DB 저장 정책 확인
+1. `환경변수 상태 확인`
+2. `공공데이터 API 전체 수집 및 인덱싱`
+3. `RAG 데이터 상태 확인`
+4. 사용자 질문 입력 후 `질문하기`
+
+## 기존 클론에서 최신 코드 받기
+
+로컬 수정이 없다면 다음 순서로 갱신합니다.
+
+```bash
+git pull origin main
+docker compose up -d
+./gradlew bootRun                 # macOS/Linux
+# .\gradlew.bat bootRun           # Windows PowerShell
+```
+
+`.env`는 pull로 생성되거나 갱신되지 않으므로, 새 환경변수가 추가되면 `.env.example`과 비교해서 직접 반영해야 합니다. PostgreSQL 데이터는 Docker named volume `ragtest-postgres-data`에 유지됩니다.
 
 ## Main APIs
 
 ```text
-POST /api/admin/ingest/public-service
+GET  /api/admin/config/status
+GET  /api/admin/rag/status
 POST /api/admin/rag/index
+POST /api/admin/rag/reindex-real
+POST /api/admin/ingest/public-service
+POST /api/admin/ingest/local-welfare
+POST /api/admin/ingest/central-welfare
+POST /api/admin/ingest/all
 POST /api/rag/ask
 GET  /api/policies
-GET  /api/policies/{policyId}
 ```
 
-## Current Scope
+## data.go.kr API 분리
 
-- 실제 동작 검증 완료:
-  - 행정안전부 대한민국 공공서비스 정보 API
-  - 청년/취업/구직/주거/월세/자산 키워드 기반 정책 수집
-  - PostgreSQL 정책 저장
-  - OpenAI Embedding 생성
-  - pgvector 저장
-  - RAG 질문/답변
+- 행정안전부 대한민국 공공서비스 정보
+  - Client: `PublicServiceApiClient`
+  - Normalizer: `PublicServiceNormalizer`
+  - SourceType: `PolicySourceType.PUBLIC_SERVICE`
+  - Key: `DATA_GO_KR_PUBLIC_SERVICE_KEY`, fallback `DATA_GO_KR_SERVICE_KEY`
 
-- 구조만 준비된 영역:
-  - 온통청년 API
-  - 지자체복지서비스 API
-  - 중앙부처복지서비스 API
+- 한국사회보장정보원 지자체복지서비스
+  - Client: `LocalWelfareApiClient`
+  - Normalizer: `LocalWelfareNormalizer`
+  - SourceType: `PolicySourceType.LOCAL_WELFARE`
+  - Key: `DATA_GO_KR_LOCAL_WELFARE_KEY`, fallback `DATA_GO_KR_SERVICE_KEY`
 
-공공데이터포털 API는 API별 활용신청/승인이 필요할 수 있습니다.
+- 한국사회보장정보원 중앙부처복지서비스
+  - Client: `CentralWelfareApiClient`
+  - Normalizer: `CentralWelfareNormalizer`
+  - SourceType: `PolicySourceType.CENTRAL_WELFARE`
+  - Key: `DATA_GO_KR_CENTRAL_WELFARE_KEY`, fallback `DATA_GO_KR_SERVICE_KEY`
 
-## Notes
+중앙부처복지서비스는 `NationalWelfarelistV001`, `NationalWelfaredetailedV001` 경로를 사용합니다. 지자체복지서비스는 현재 공공데이터포털 Swagger의 `LocalGovernmentWelfareInformations/LcgvWelfarelist`, `LcgvWelfaredetailed` 경로를 사용합니다.
 
-- Spring Security는 사용하지 않습니다.
-- Swagger는 사용하지 않고 정적 웹 화면으로 테스트합니다.
-- RAG 답변은 검색된 정책 CONTEXT만 근거로 생성하도록 프롬프트를 구성했습니다.
-- 정책 재인덱싱 시 기존 같은 `policyId` vector row를 삭제한 뒤 새로 저장합니다.
-- 로컬 IntelliJ 설정과 API 키가 들어갈 수 있는 `.idea`는 Git에 포함하지 않습니다.
+각 수집은 목록을 조회한 뒤 정책별 상세조회 결과를 병합합니다. 상세조회 한 건이 실패해도 목록 정보로 저장을 계속하며, 실패 내용은 raw payload의 `_detailFetchError`에 남깁니다. 기본 수집 상한은 API별 100건입니다. 저장 후 `youthRelated=true`인 정책만 즉시 인덱싱합니다.
+
+`실제 정책 데이터 재인덱싱`은 기존 `vector_store` 내용을 트랜잭션 안에서 정리하고, 실제 API 출처이면서 청년 관련인 정책만 다시 인덱싱합니다.
+
+## 테스트 케이스
+
+1. 공공데이터 API 전체 수집 및 인덱싱 실행 후 `RAG 데이터 상태 확인`에서 `PUBLIC_SERVICE`, `LOCAL_WELFARE`, `CENTRAL_WELFARE`별 카운트가 표시되는지 확인합니다.
+2. `27살이 받을 수 있는 청년 정책 알려줘` 질문 시 실제 API에서 수집된 `youthRelated=true`, `indexed=true` 정책만 sources에 표시되는지 확인합니다.
+3. `경기도 수원시에 사는 27살 취업준비생이 받을 수 있는 청년 정책 알려줘` 질문 시 `region=경기도 수원시`가 추출되고 전국/경기도/수원시 적용 가능 정책만 sources에 포함되는지 확인합니다.
+4. 실제 API 수집 전 질문 시 다음 메시지가 표시되는지 확인합니다.
+
+```text
+아직 수집된 청년정책 데이터가 없습니다. 관리자 테스트에서 실제 공공데이터 API 수집 및 인덱싱을 먼저 실행해주세요.
+```
+
+## 테스트와 문제 해결
+
+전체 자동 테스트:
+
+```bash
+./gradlew test                 # macOS/Linux
+# .\gradlew.bat test           # Windows PowerShell
+```
+
+- `Connection refused: localhost:5432`: `docker compose ps`로 PostgreSQL 상태를 확인합니다.
+- 8080 또는 5432 포트 충돌: 해당 포트를 사용하는 프로세스를 종료하거나 `application.yaml`/Compose 포트 매핑을 조정합니다.
+- 공공데이터 API 401/403: 인증키 값, 해당 API 활용신청 승인 여부, 키 인코딩 상태를 공공데이터포털에서 확인합니다.
+- 인덱싱 실패: `OPENAI_API_KEY`와 OpenAI API 사용 가능 상태를 확인합니다.
+- 중앙부처 개발계정은 호출 한도가 작을 수 있습니다. 목록+상세조회가 각각 트래픽을 사용하므로 반복 수집에 주의합니다.
+
+공공 API 응답 필드는 제공기관 개편으로 바뀔 수 있습니다. 특히 지자체/중앙부처 상세 응답의 지원대상·선정기준·신청방법·공식 링크 필드가 raw payload에 존재하지만 정규화 결과가 비어 있으면, 현재 활용신청에 연결된 Swagger/활용가이드의 실제 응답 필드명을 다시 대조해야 합니다.

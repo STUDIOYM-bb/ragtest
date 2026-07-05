@@ -21,21 +21,37 @@ public class LocalWelfareNormalizer implements PolicyNormalizer<JsonNode> {
     public ExternalPolicyRecord normalizeToRecord(JsonNode source) {
         String id = text(source, "servId", "서비스ID", "id");
         String title = firstNonBlank(text(source, "servNm"), text(source, "서비스명"), id);
+        String ctpvNm = text(source, "ctpvNm", "시도명");
+        String sggNm = text(source, "sggNm", "시군구명");
         return new ExternalPolicyRecord(
                 PolicySourceType.LOCAL_WELFARE,
                 id,
                 title,
-                firstNonBlank(text(source, "servDgst"), text(source, "jurMnofNm"), title),
-                firstNonBlank(text(source, "lifeArray"), text(source, "trgterIndvdlArray"), ""),
-                firstNonBlank(text(source, "slctCritCn"), text(source, "alwServCn"), ""),
-                firstNonBlank(text(source, "aplyMtdCn"), text(source, "servSeCode"), ""),
+                firstNonBlank(text(source, "servDgst"), text(source, "alwServCn"), text(source, "jurMnofNm"), title),
+                firstNonBlank(text(source, "tgtrDtlCn"), text(source, "supportTarget"),
+                        text(source, "lifeArray"), text(source, "trgterIndvdlArray"), ""),
+                firstNonBlank(text(source, "slctCritCn"), text(source, "selectionCriteria"), ""),
+                firstNonBlank(text(source, "aplyMtdCn"), text(source, "applicationMethod"), ""),
                 null,
                 null,
-                firstNonBlank(text(source, "ctpvNm"), text(source, "sggNm"), text(source, "jurMnofNm"), "지자체"),
+                normalizeRegion(ctpvNm, sggNm, text(source, "jurMnofNm")),
                 "지자체복지서비스",
-                firstNonBlank(text(source, "servDtlLink"), "https://www.bokjiro.go.kr"),
+                firstNonBlank(text(source, "servDtlLink"), text(source, "servSeDetailLink"), "https://www.bokjiro.go.kr"),
                 source.toString()
         );
+    }
+
+    private String normalizeRegion(String sido, String sigungu, String organizationName) {
+        if (hasText(sido) && hasText(sigungu)) {
+            return sido.strip() + " " + sigungu.strip();
+        }
+        if (hasText(sido)) {
+            return sido.strip();
+        }
+        if (hasText(sigungu)) {
+            return sigungu.strip();
+        }
+        return firstNonBlank(organizationName, "지자체");
     }
 
     private String text(JsonNode source, String... names) {
@@ -50,10 +66,14 @@ public class LocalWelfareNormalizer implements PolicyNormalizer<JsonNode> {
 
     private String firstNonBlank(String... values) {
         for (String value : values) {
-            if (value != null && !value.isBlank()) {
+            if (hasText(value)) {
                 return value.strip();
             }
         }
         return "";
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

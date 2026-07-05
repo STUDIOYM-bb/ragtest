@@ -8,10 +8,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 @Component
@@ -24,7 +24,7 @@ public class PublicServiceApiClient {
     private final String serviceKey;
 
     public PublicServiceApiClient(
-            @Value("${external-api.data-go-kr.service-key:}") String serviceKey
+            @Value("${external-api.data-go-kr.public-service-key:}") String serviceKey
     ) {
         this.httpClient = HttpClient.newHttpClient();
         this.objectMapper = JsonMapper.builder().build();
@@ -43,8 +43,7 @@ public class PublicServiceApiClient {
                 ? ""
                 : "&cond%5B%EC%84%9C%EB%B9%84%EC%8A%A4%EB%AA%85%3A%3ALIKE%5D=" + encode(serviceNameLike))
                 + "&serviceKey=" + encode(serviceKey);
-        String json = get(url);
-        return readJson(json);
+        return readJson(get(url));
     }
 
     public JsonNode fetchDetail(String externalId) {
@@ -52,8 +51,7 @@ public class PublicServiceApiClient {
         String url = BASE_URL + "/serviceDetail?page=1&perPage=1"
                 + "&cond%5B%EC%84%9C%EB%B9%84%EC%8A%A4ID%3A%3AEQ%5D=" + encode(externalId)
                 + "&serviceKey=" + encode(serviceKey);
-        String json = get(url);
-        return readJson(json);
+        return readJson(get(url));
     }
 
     private String get(String url) {
@@ -85,11 +83,14 @@ public class PublicServiceApiClient {
 
     private void requireServiceKey() {
         if (serviceKey == null || serviceKey.isBlank()) {
-            throw new BusinessException("공공데이터포털 API 키가 설정되지 않았습니다.");
+            throw new BusinessException("DATA_GO_KR_PUBLIC_SERVICE_KEY 또는 DATA_GO_KR_SERVICE_KEY가 설정되지 않았습니다.");
         }
     }
 
     private String encode(String value) {
+        if (value != null && value.matches(".*%[0-9a-fA-F]{2}.*")) {
+            return value;
+        }
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 }

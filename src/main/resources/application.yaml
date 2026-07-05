@@ -5,6 +5,19 @@ spring:
   application:
     name: ragtest
 
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
+      - org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
+
+  config:
+    import: optional:file:.env[.properties]
+
   datasource:
     url: jdbc:postgresql://localhost:5432/ragtest
     username: ragtest
@@ -21,7 +34,7 @@ spring:
 
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:__OPENAI_API_KEY_NOT_SET__}
+      api-key: ${OPENAI_API_KEY:}
       chat:
         options:
           model: ${OPENAI_CHAT_MODEL:gpt-4.1-mini}
@@ -43,6 +56,9 @@ external-api:
     api-key: ${YOUTH_CENTER_API_KEY:}
   data-go-kr:
     service-key: ${DATA_GO_KR_SERVICE_KEY:}
+    public-service-key: ${DATA_GO_KR_PUBLIC_SERVICE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
+    local-welfare-key: ${DATA_GO_KR_LOCAL_WELFARE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
+    central-welfare-key: ${DATA_GO_KR_CENTRAL_WELFARE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
 
 logging:
   level:

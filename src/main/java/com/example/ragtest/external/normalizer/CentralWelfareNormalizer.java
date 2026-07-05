@@ -25,15 +25,16 @@ public class CentralWelfareNormalizer implements PolicyNormalizer<JsonNode> {
                 PolicySourceType.CENTRAL_WELFARE,
                 id,
                 title,
-                firstNonBlank(text(source, "servDgst"), text(source, "jurMnofNm"), title),
-                firstNonBlank(text(source, "lifeArray"), text(source, "trgterIndvdlArray"), ""),
-                firstNonBlank(text(source, "slctCritCn"), text(source, "alwServCn"), ""),
-                firstNonBlank(text(source, "aplyMtdCn"), text(source, "servSeCode"), ""),
+                firstNonBlank(text(source, "servDgst"), text(source, "alwServCn"), text(source, "jurMnofNm"), title),
+                firstNonBlank(text(source, "tgtrDtlCn"), text(source, "supportTarget"),
+                        text(source, "lifeArray"), text(source, "trgterIndvdlArray"), ""),
+                firstNonBlank(text(source, "slctCritCn"), text(source, "selectionCriteria"), ""),
+                firstNonBlank(text(source, "aplyMtdCn"), text(source, "applicationMethod"), ""),
                 null,
                 null,
                 "전국",
                 "중앙부처복지서비스",
-                firstNonBlank(text(source, "servDtlLink"), "https://www.bokjiro.go.kr"),
+                firstNonBlank(text(source, "servDtlLink"), text(source, "servSeDetailLink"), "https://www.bokjiro.go.kr"),
                 source.toString()
         );
     }

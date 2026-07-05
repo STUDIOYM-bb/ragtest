@@ -1,7 +1,5 @@
 package com.example.ragtest.rag.dto;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 
 public record RagAskRequest(
@@ -9,10 +7,10 @@ public record RagAskRequest(
         String region,
         Integer age,
         String employmentStatus,
-        @Min(1) @Max(10) Integer topK
+        Integer topK
 ) {
     public int effectiveTopK() {
-        if (topK == null) {
+        if (topK == null || topK < 1) {
             return 5;
         }
         return Math.min(topK, 10);

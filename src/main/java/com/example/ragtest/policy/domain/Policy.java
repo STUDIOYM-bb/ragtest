@@ -65,6 +65,9 @@ public class Policy {
     @Column(nullable = false)
     private boolean indexed = false;
 
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean youthRelated = false;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
@@ -100,8 +103,19 @@ public class Policy {
         }
     }
 
+    public void updateYouthRelated(boolean youthRelated) {
+        if (this.youthRelated != youthRelated) {
+            this.indexed = false;
+        }
+        this.youthRelated = youthRelated;
+    }
+
     public void markIndexed() {
         this.indexed = true;
+    }
+
+    public void markUnindexed() {
+        this.indexed = false;
     }
 
     @PrePersist
@@ -174,5 +188,9 @@ public class Policy {
 
     public boolean isIndexed() {
         return indexed;
+    }
+
+    public boolean isYouthRelated() {
+        return youthRelated;
     }
 }

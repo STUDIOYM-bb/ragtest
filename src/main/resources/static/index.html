@@ -13,51 +13,54 @@
     <div id="serverStatus" class="status neutral">서버 연결 확인 중...</div>
   </header>
 
-  <section class="panel">
+  <section class="panel primary-panel">
     <div class="panel-title">
-      <h2>관리자 테스트</h2>
+      <h2>사용자 질문</h2>
     </div>
-    <button id="indexSampleButton" class="primary-button">실제 공공서비스 API 수집 및 인덱싱</button>
-    <div id="indexResult" class="message"></div>
-  </section>
-
-  <section class="panel">
-    <div class="panel-title">
-      <h2>질문하기</h2>
-    </div>
-    <form id="askForm" class="form-grid">
+    <form id="askForm" class="ask-form">
       <label class="full">
         질문
-        <textarea id="question" rows="3">수원에 사는 27살 취업준비생이 받을 수 있는 청년 지원 정책 알려줘</textarea>
+        <textarea id="question" rows="4">경기도 수원시에 사는 27살 취업준비생이 받을 수 있는 청년 정책 알려줘</textarea>
       </label>
-      <label>
-        지역
-        <input id="region" value="경기도 수원시">
-      </label>
-      <label>
-        나이
-        <input id="age" type="number" value="27">
-      </label>
-      <label>
-        취업상태
-        <input id="employmentStatus" value="취업준비생">
-      </label>
-      <label>
-        검색 개수
-        <input id="topK" type="number" min="1" max="10" value="5">
-      </label>
-      <div class="full">
+      <div class="ask-actions">
+        <label class="topk-field">
+          검색 개수
+          <input id="topK" type="number" min="1" max="10" value="5">
+        </label>
         <button id="askButton" class="primary-button" type="submit">질문하기</button>
       </div>
     </form>
+    <div id="conditionResult" class="condition-box"></div>
     <div id="askResult" class="answer"></div>
     <div id="sourceList" class="card-grid"></div>
   </section>
 
   <section class="panel">
+    <details>
+      <summary>관리자 테스트</summary>
+      <div class="admin-grid">
+        <button class="secondary-button" data-action="configStatus">환경변수 상태 확인</button>
+        <button class="secondary-button" data-action="ragStatus">RAG 데이터 상태 확인</button>
+        <button class="secondary-button" data-action="ingestPublicService">행정안전부 공공서비스 API 수집 및 인덱싱</button>
+        <button class="secondary-button" data-action="ingestLocalWelfare">지자체복지서비스 API 수집 및 인덱싱</button>
+        <button class="secondary-button" data-action="ingestCentralWelfare">중앙부처복지서비스 API 수집 및 인덱싱</button>
+        <button class="primary-button" data-action="ingestAll">공공데이터 API 전체 수집 및 인덱싱</button>
+        <button class="secondary-button" data-action="reindexReal">실제 정책 데이터 재인덱싱</button>
+        <button class="secondary-button" data-action="loadPolicies">저장된 정책 목록 불러오기</button>
+      </div>
+      <div id="adminResult" class="message"></div>
+      <div id="configStatusList" class="status-list"></div>
+      <div id="ragStatusBox" class="rag-status"></div>
+    </details>
+  </section>
+
+  <section class="panel">
     <div class="panel-title">
       <h2>정책 목록</h2>
-      <button id="loadPoliciesButton" class="secondary-button">저장된 정책 목록 불러오기</button>
+      <label class="inline-check">
+        <input id="youthOnly" type="checkbox" checked>
+        실제 청년 관련만 보기
+      </label>
     </div>
     <div id="policyList" class="card-grid"></div>
   </section>

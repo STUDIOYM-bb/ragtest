@@ -28,6 +28,7 @@ out/
 
 ### Local runtime logs ###
 bootrun*.log
+.env
 
 ### NetBeans ###
 /nbproject/private/

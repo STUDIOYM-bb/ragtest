@@ -19,7 +19,8 @@ public record PolicyResponse(
         String regionName,
         String categoryName,
         String officialUrl,
-        boolean indexed
+        boolean indexed,
+        boolean youthRelated
 ) {
     public static PolicyResponse from(Policy policy) {
         return new PolicyResponse(
@@ -36,7 +37,8 @@ public record PolicyResponse(
                 policy.getRegionName(),
                 policy.getCategoryName(),
                 policy.getOfficialUrl(),
-                policy.isIndexed()
+                policy.isIndexed(),
+                policy.isYouthRelated()
         );
     }
 }

@@ -2,6 +2,7 @@ package com.example.ragtest.ingest.service;
 
 import com.example.ragtest.common.exception.BusinessException;
 import com.example.ragtest.policy.domain.Policy;
+import com.example.ragtest.policy.domain.PolicySourceType;
 import com.example.ragtest.policy.repository.PolicyRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -50,8 +51,35 @@ public class PolicyIndexingService {
 
     @Transactional
     public int indexUnindexedPolicies() {
+        return indexUnindexedRealPolicies();
+    }
+
+    @Transactional
+    public int indexUnindexedRealPolicies() {
         requireOpenAiApiKey();
-        List<Policy> policies = policyRepository.findAllByIndexedFalse();
+        List<Policy> policies = policyRepository.findAllBySourceTypeNotAndIndexedFalseAndYouthRelatedTrue(PolicySourceType.SAMPLE);
+        return indexPolicies(policies);
+    }
+
+    @Transactional
+    public int indexUnindexedPolicies(PolicySourceType sourceType) {
+        if (sourceType == PolicySourceType.SAMPLE) {
+            return 0;
+        }
+        requireOpenAiApiKey();
+        List<Policy> policies = policyRepository.findAllBySourceTypeAndIndexedFalseAndYouthRelatedTrue(sourceType);
+        return indexPolicies(policies);
+    }
+
+    @Transactional
+    public int reindexRealYouthPolicies() {
+        requireOpenAiApiKey();
+        clearVectorStore();
+        List<Policy> policies = policyRepository.findAllBySourceTypeNotAndYouthRelatedTrue(PolicySourceType.SAMPLE);
+        return indexPolicies(policies);
+    }
+
+    private int indexPolicies(List<Policy> policies) {
         int indexedCount = 0;
         for (Policy policy : policies) {
             try {
@@ -71,6 +99,10 @@ public class PolicyIndexingService {
             }
         }
         return indexedCount;
+    }
+
+    private void clearVectorStore() {
+        jdbcTemplate.update("delete from vector_store");
     }
 
     private void deleteExistingVectors(Long policyId) {
@@ -121,6 +153,8 @@ public class PolicyIndexingService {
         metadata.put("regionName", clean(policy.getRegionName()));
         metadata.put("categoryName", clean(policy.getCategoryName()));
         metadata.put("officialUrl", clean(policy.getOfficialUrl()));
+        metadata.put("youthRelated", policy.isYouthRelated());
+        metadata.put("indexed", true);
         metadata.put("chunkIndex", chunkIndex);
         return metadata;
     }
@@ -136,6 +170,7 @@ public class PolicyIndexingService {
                 신청기간: %s ~ %s
                 지역: %s
                 카테고리: %s
+                청년 관련 여부: %s
                 공식 링크: %s
                 """.formatted(
                 safe(policy.getTitle()),
@@ -148,6 +183,7 @@ public class PolicyIndexingService {
                 policy.getApplicationEndDate() == null ? "" : policy.getApplicationEndDate().format(DATE_FORMATTER),
                 safe(policy.getRegionName()),
                 safe(policy.getCategoryName()),
+                policy.isYouthRelated() ? "Y" : "N",
                 safe(policy.getOfficialUrl())
         ));
     }
@@ -196,7 +232,7 @@ public class PolicyIndexingService {
     }
 
     private void requireOpenAiApiKey() {
-        if (openAiApiKey == null || openAiApiKey.isBlank() || "__OPENAI_API_KEY_NOT_SET__".equals(openAiApiKey)) {
+        if (openAiApiKey == null || openAiApiKey.isBlank()) {
             throw new BusinessException("OPENAI_API_KEY가 설정되지 않았습니다.");
         }
     }
