@@ -53,10 +53,12 @@ spring:
 
 external-api:
   youth-center:
-    api-key: ${YOUTH_CENTER_API_KEY:}
+    official-api-key: ${YOUTH_CENTER_API_KEY:}
+    official-base-url: https://www.youthcenter.go.kr/opi/youthPlcyList.do
   data-go-kr:
     service-key: ${DATA_GO_KR_SERVICE_KEY:}
     youth-policy-key: ${DATA_GO_KR_YOUTH_POLICY_KEY:${DATA_GO_KR_SERVICE_KEY:}}
+    youth-policy-base-url: ${DATA_GO_KR_YOUTH_POLICY_BASE_URL:}
     public-service-key: ${DATA_GO_KR_PUBLIC_SERVICE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
     local-welfare-key: ${DATA_GO_KR_LOCAL_WELFARE_KEY:${DATA_GO_KR_SERVICE_KEY:}}
     central-welfare-key: ${DATA_GO_KR_CENTRAL_WELFARE_KEY:${DATA_GO_KR_SERVICE_KEY:}}

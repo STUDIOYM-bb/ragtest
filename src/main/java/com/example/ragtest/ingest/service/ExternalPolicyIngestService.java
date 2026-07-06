@@ -2,9 +2,10 @@ package com.example.ragtest.ingest.service;
 
 import com.example.ragtest.common.exception.BusinessException;
 import com.example.ragtest.external.client.CentralWelfareApiClient;
+import com.example.ragtest.external.client.DataGoKrYouthPolicyApiClient;
 import com.example.ragtest.external.client.LocalWelfareApiClient;
 import com.example.ragtest.external.client.PublicServiceApiClient;
-import com.example.ragtest.external.client.YouthCenterApiClient;
+import com.example.ragtest.external.client.YouthCenterOfficialApiClient;
 import com.example.ragtest.external.dto.ExternalPolicyRecord;
 import com.example.ragtest.external.normalizer.CentralWelfareNormalizer;
 import com.example.ragtest.external.normalizer.LocalWelfareNormalizer;
@@ -12,6 +13,7 @@ import com.example.ragtest.external.normalizer.PublicServiceNormalizer;
 import com.example.ragtest.external.normalizer.YouthPolicyNormalizer;
 import com.example.ragtest.policy.domain.Policy;
 import com.example.ragtest.policy.domain.PolicyRawPayload;
+import com.example.ragtest.policy.domain.PolicySourceType;
 import com.example.ragtest.policy.filter.YouthPolicyFilter;
 import com.example.ragtest.policy.repository.PolicyRawPayloadRepository;
 import com.example.ragtest.policy.repository.PolicyRepository;
@@ -19,6 +21,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientResponseException;
@@ -29,12 +33,14 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 
 @Service
 public class ExternalPolicyIngestService {
+    private static final Logger log = LoggerFactory.getLogger(ExternalPolicyIngestService.class);
 
     private static final List<String> PUBLIC_SERVICE_KEYWORDS = List.of(
             "청년", "청소년", "학생", "대학생", "대학원생", "재학생", "휴학생", "졸업생",
@@ -44,11 +50,23 @@ public class ExternalPolicyIngestService {
             "자산", "금융", "저축", "적금", "도약계좌", "내일저축", "햇살론", "문화", "복지",
             "건강", "상담", "신혼부부", "사회초년생", "자립준비청년"
     );
+    private static final List<String> YOUTH_CENTER_KEYWORDS = List.of(
+            "청년", "학생", "대학생", "취업", "구직", "일자리", "주거", "월세", "전세",
+            "금융", "자산", "저축", "창업", "교육", "학자금", "장학금", "교통", "문화",
+            "복지", "신혼부부", "자립준비청년", "사회초년생"
+    );
+    private static final List<String> YOUTH_CENTER_ITEM_PATHS = List.of(
+            "/youthPolicy", "/youthPolicyList", "/policyList", "/data", "/items",
+            "/result/youthPolicy", "/result/youthPolicyList", "/result/policyList", "/result/data", "/result/items",
+            "/response/body/items/item", "/response/body/items", "/response/body/data",
+            "/youthPlcyList/youthPolicy", "/youthPlcyList/youthPolicyList", "/youthPlcyList/policyList"
+    );
 
     private final PublicServiceApiClient publicServiceApiClient;
     private final LocalWelfareApiClient localWelfareApiClient;
     private final CentralWelfareApiClient centralWelfareApiClient;
-    private final YouthCenterApiClient youthCenterApiClient;
+    private final YouthCenterOfficialApiClient youthCenterOfficialApiClient;
+    private final DataGoKrYouthPolicyApiClient dataGoKrYouthPolicyApiClient;
     private final PublicServiceNormalizer publicServiceNormalizer;
     private final LocalWelfareNormalizer localWelfareNormalizer;
     private final CentralWelfareNormalizer centralWelfareNormalizer;
@@ -62,7 +80,8 @@ public class ExternalPolicyIngestService {
             PublicServiceApiClient publicServiceApiClient,
             LocalWelfareApiClient localWelfareApiClient,
             CentralWelfareApiClient centralWelfareApiClient,
-            YouthCenterApiClient youthCenterApiClient,
+            YouthCenterOfficialApiClient youthCenterOfficialApiClient,
+            DataGoKrYouthPolicyApiClient dataGoKrYouthPolicyApiClient,
             PublicServiceNormalizer publicServiceNormalizer,
             LocalWelfareNormalizer localWelfareNormalizer,
             CentralWelfareNormalizer centralWelfareNormalizer,
@@ -74,7 +93,8 @@ public class ExternalPolicyIngestService {
         this.publicServiceApiClient = publicServiceApiClient;
         this.localWelfareApiClient = localWelfareApiClient;
         this.centralWelfareApiClient = centralWelfareApiClient;
-        this.youthCenterApiClient = youthCenterApiClient;
+        this.youthCenterOfficialApiClient = youthCenterOfficialApiClient;
+        this.dataGoKrYouthPolicyApiClient = dataGoKrYouthPolicyApiClient;
         this.publicServiceNormalizer = publicServiceNormalizer;
         this.localWelfareNormalizer = localWelfareNormalizer;
         this.centralWelfareNormalizer = centralWelfareNormalizer;
@@ -160,23 +180,72 @@ public class ExternalPolicyIngestService {
 
     @Transactional
     public IngestResult ingestYouthCenterPolicies(IngestOptions options) {
-        Counter counter = new Counter();
+        return ingestYouthPolicies(options);
+    }
+
+    @Transactional
+    public IngestResult ingestYouthPolicies(IngestOptions options) {
+        if (dataGoKrYouthPolicyApiClient.isConfigured()) {
+            return ingestDataGoKrYouthPolicy(options);
+        }
+        if (youthCenterOfficialApiClient.isConfigured()) {
+            return ingestYouthCenterOfficial(options);
+        }
+        throw new BusinessException("온통청년 수집 설정이 없습니다. DATA_GO_KR_YOUTH_POLICY_BASE_URL과 "
+                + "DATA_GO_KR_YOUTH_POLICY_KEY 또는 YOUTH_CENTER_API_KEY를 설정하세요.");
+    }
+
+    @Transactional
+    public IngestResult ingestYouthCenterOfficial(IngestOptions options) {
+        return ingestYouthPolicyFromFetcher(
+                (page, size, query) -> youthCenterOfficialApiClient.fetchList(page, size, query),
+                options
+        );
+    }
+
+    @Transactional
+    public IngestResult ingestDataGoKrYouthPolicy(IngestOptions options) {
+        return ingestYouthPolicyFromFetcher(
+                (page, size, query) -> dataGoKrYouthPolicyApiClient.fetchList(page, size, query),
+                options
+        );
+    }
+
+    private IngestResult ingestYouthPolicyFromFetcher(YouthPolicyPageFetcher fetcher, IngestOptions options) {
+        Counter counter = new Counter(PolicySourceType.YOUTH_CENTER);
         Set<String> seenIds = new HashSet<>();
         for (int page = 1; page <= options.maxPages() && counter.fetched < options.maxItems(); page++) {
-            List<JsonNode> listItems = items(youthCenterApiClient.fetchList(page, options.pageSize()));
-            if (listItems.isEmpty()) break;
-            for (JsonNode item : listItems) {
-                if (counter.fetched >= options.maxItems()) break;
-                ExternalPolicyRecord record = youthPolicyNormalizer.normalizeToRecord(item);
-                if (!hasRequiredListFields(record) || !seenIds.add(record.externalId())) {
-                    counter.skipped++;
-                    continue;
-                }
-                counter.fetched++;
-                saveRecord(record, counter);
+            ItemExtractionResult extracted = youthCenterItems(fetcher.fetch(page, options.pageSize(), ""));
+            counter.rememberPotentialMessage(extracted.message());
+            if (!collectYouthCenterItems(extracted.items(), options.maxItems(), seenIds, counter)) break;
+        }
+        for (String keyword : YOUTH_CENTER_KEYWORDS) {
+            if (counter.fetched >= options.maxItems()) break;
+            for (int page = 1; page <= options.maxPages() && counter.fetched < options.maxItems(); page++) {
+                ItemExtractionResult extracted = youthCenterItems(fetcher.fetch(page, options.pageSize(), keyword));
+                counter.rememberPotentialMessage(extracted.message());
+                if (!collectYouthCenterItems(extracted.items(), options.maxItems(), seenIds, counter)) break;
             }
         }
+        if (counter.fetched == 0 && counter.potentialMessage == null) {
+            counter.rememberPotentialMessage("응답은 받았지만 정책 목록을 찾지 못했습니다. 응답 구조를 확인하세요.");
+        }
         return counter.toResult();
+    }
+
+    private boolean collectYouthCenterItems(List<JsonNode> listItems, int limit, Set<String> seenIds, Counter counter) {
+        if (listItems.isEmpty()) return false;
+        for (JsonNode item : listItems) {
+            if (counter.fetched >= limit) break;
+            ExternalPolicyRecord record = youthPolicyNormalizer.normalizeToRecord(item);
+            if (!hasRequiredListFields(record) || !seenIds.add(record.externalId())) {
+                counter.skipped++;
+                continue;
+            }
+            counter.fetched++;
+            saveRecord(record, counter);
+        }
+        return true;
     }
 
     private IngestResult ingestPagedItems(Function<Integer, JsonNode> listFetcher,
@@ -248,6 +317,30 @@ public class ExternalPolicyIngestService {
         return found.isEmpty() ? response : found.getFirst();
     }
 
+    private ItemExtractionResult youthCenterItems(JsonNode response) {
+        List<JsonNode> found = new ArrayList<>();
+        Set<JsonNode> seen = new LinkedHashSet<>();
+        for (String path : YOUTH_CENTER_ITEM_PATHS) {
+            JsonNode node = response == null ? null : response.at(path);
+            if (node != null && !node.isMissingNode() && !node.isNull()) {
+                collectItems(node, found);
+                found.forEach(seen::add);
+            }
+        }
+        if (!seen.isEmpty()) {
+            return new ItemExtractionResult(new ArrayList<>(seen), null);
+        }
+
+        List<JsonNode> fallback = items(response);
+        if (!fallback.isEmpty()) {
+            return new ItemExtractionResult(fallback, null);
+        }
+
+        String message = "응답은 받았지만 정책 목록을 찾지 못했습니다. 응답 구조를 확인하세요.";
+        log.warn("온통청년 정책 목록 추출 실패: {}", describeShape(response));
+        return new ItemExtractionResult(List.of(), message);
+    }
+
     static List<JsonNode> items(JsonNode response) {
         List<JsonNode> found = new ArrayList<>();
         collectItems(response, found);
@@ -269,7 +362,7 @@ public class ExternalPolicyIngestService {
 
     private static boolean isPolicyItem(JsonNode node) {
         return node.isObject()
-                && hasAnyText(node, "서비스ID", "serviceId", "servId", "plcyNo", "bizId", "policyId", "id")
+                && hasAnyText(node, "서비스ID", "serviceId", "servId", "plcyNo", "bizId", "policyId", "id", "polyBizSjnm")
                 && hasAnyText(node, "서비스명", "serviceName", "servNm", "plcyNm", "polyBizSjnm", "policyName", "title");
     }
 
@@ -299,13 +392,49 @@ public class ExternalPolicyIngestService {
         ExternalPolicyRecord normalize(JsonNode item);
     }
 
+    @FunctionalInterface
+    private interface YouthPolicyPageFetcher {
+        JsonNode fetch(int page, int size, String query);
+    }
+
+    private String describeShape(JsonNode node) {
+        if (node == null || node.isNull()) return "empty response";
+        if (node.isArray()) return "array(size=" + node.size() + ")";
+        if (!node.isObject()) return node.getNodeType().name();
+        List<String> fields = new ArrayList<>();
+        node.fieldNames().forEachRemaining(fields::add);
+        String snippet = node.toString();
+        if (snippet.length() > 800) snippet = snippet.substring(0, 800) + "...";
+        return "object(fields=" + fields + ", snippet=" + snippet + ")";
+    }
+
     private static class Counter {
         private int fetched;
         private int saved;
         private int skipped;
+        private final PolicySourceType sourceType;
+        private String potentialMessage;
+
+        private Counter() {
+            this(null);
+        }
+
+        private Counter(PolicySourceType sourceType) {
+            this.sourceType = sourceType;
+        }
+
+        private void rememberPotentialMessage(String message) {
+            if (this.potentialMessage == null && message != null && !message.isBlank()) {
+                this.potentialMessage = message;
+            }
+        }
 
         private IngestResult toResult() {
-            return new IngestResult(fetched, saved, 0, skipped);
+            return new IngestResult(fetched, saved, 0, skipped,
+                    sourceType == null ? null : sourceType.name(), fetched == 0 ? potentialMessage : null);
         }
+    }
+
+    private record ItemExtractionResult(List<JsonNode> items, String message) {
     }
 }

@@ -30,7 +30,7 @@ public class PolicyRelevanceScorer {
                 + keywordScore
                 + conditionScore;
         if (candidate.isFromVector() && candidate.isFromKeyword()) finalScore += 8.0;
-        if (policy.getSourceType() == PolicySourceType.YOUTH_CENTER) finalScore += 8.0;
+        if (policy.getSourceType() == PolicySourceType.YOUTH_CENTER) finalScore += 5.0;
         finalScore += intentPenalty(policy, condition);
 
         candidate.setConditionScore(conditionScore);

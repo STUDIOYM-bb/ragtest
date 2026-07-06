@@ -35,4 +35,28 @@ class ExternalPolicyIngestServiceTest {
         assertThat(items).hasSize(1);
         assertThat(items.get(0).path("servId").asText()).isEqualTo("W1");
     }
+
+    @Test
+    void extractsYouthCenterItemsFromPublicDataStyleWrapper() throws Exception {
+        JsonNode response = jsonMapper.readTree("""
+                {"response":{"body":{"items":{"item":[{"plcyNo":"Y1","plcyNm":"청년 월세 지원"}]}}}}
+                """);
+
+        List<JsonNode> items = ExternalPolicyIngestService.items(response);
+
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).path("plcyNo").asText()).isEqualTo("Y1");
+    }
+
+    @Test
+    void extractsYouthCenterItemsWhenLegacyTitleIsOnlyStableIdentifier() throws Exception {
+        JsonNode response = jsonMapper.readTree("""
+                {"youthPolicyList":[{"polyBizSjnm":"청년 취업 지원"}]}
+                """);
+
+        List<JsonNode> items = ExternalPolicyIngestService.items(response);
+
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).path("polyBizSjnm").asText()).isEqualTo("청년 취업 지원");
+    }
 }

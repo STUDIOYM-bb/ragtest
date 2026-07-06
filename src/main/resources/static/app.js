@@ -30,10 +30,15 @@ const actions = {
   ingestLocalWelfare: (button, original) => startJob(`/api/admin/ingest/local-welfare?${ingestQuery()}`, button, original),
   ingestCentralWelfare: (button, original) => startJob(`/api/admin/ingest/central-welfare?${ingestQuery()}`, button, original),
   ingestYouthCenter: (button, original) => startJob(`/api/admin/ingest/youth-center?${ingestQuery()}`, button, original),
+  ingestYouthCenterOfficial: (button, original) => startJob(`/api/admin/ingest/youth-center-official?${ingestQuery()}`, button, original),
+  ingestYouthPolicyDataGoKr: (button, original) => startJob(`/api/admin/ingest/youth-policy-data-go-kr?${ingestQuery()}`, button, original),
   indexReal: (button, original) => startJob(`/api/admin/rag/index?limit=${numberValue("#indexLimit", 30)}`, button, original),
+  indexYouthCenter: (button, original) => startJob(`/api/admin/rag/index-source/YOUTH_CENTER?limit=${numberValue("#indexLimit", 30)}`, button, original),
   reindexReal: (button, original) => startJob(`/api/admin/rag/reindex-real?limit=${numberValue("#indexLimit", 30)}`, button, original),
   loadPolicies: loadPolicies,
-  debugSearch: debugSearch
+  debugSearch: debugSearch,
+  debugYouthCenterOfficialRaw: () => debugYouthRaw("/api/admin/debug/youth-center-official/raw?query=%EC%B2%AD%EB%85%84&pageIndex=1&display=10"),
+  debugYouthPolicyDataGoKrRaw: () => debugYouthRaw("/api/admin/debug/youth-policy-data-go-kr/raw?query=%EC%B2%AD%EB%85%84&pageNo=1&numOfRows=10")
 };
 
 document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", async () => {
@@ -81,7 +86,12 @@ async function pollJob(jobId, button, original) {
         break;
       }
       if (job.status === "FAILED") {
-        setMessage(adminResult, `${job.type} 실패: ${job.errorMessage || job.message}`, "error");
+        const errorText = job.errorMessage || job.message || "";
+        const redirectHint = errorText.includes("302")
+          ? "\n공식 온통청년 API가 302 리다이렉트를 반환했습니다. 공공데이터포털 키를 공식 API에 넣은 경우일 수 있습니다. 공공데이터포털 온통청년 API 수집을 사용해보세요." : "";
+        const hint = job.type === "INGEST_YOUTH_CENTER"
+          ? `\n원본 응답 확인 버튼을 눌러 XML 또는 JSON이 내려오는지 먼저 확인해보세요.${redirectHint}` : "";
+        setMessage(adminResult, `${job.type} 실패: ${job.errorMessage || job.message}${hint}`, "error");
         break;
       }
     }
@@ -115,15 +125,20 @@ function renderJobResult(job) {
   if (job.type.startsWith("INGEST_")) return `<div class="job-result">${formatCounts(job.result)}</div>`;
   return `<div class="job-result">인덱싱 ${job.result.indexedCount || 0}건</div>`;
 }
-const formatCounts = (v) => `수집 ${v.fetchedCount || 0}건, 청년 관련 ${v.savedCount || 0}건, 제외 ${v.skippedCount || 0}건`;
+const formatCounts = (v) => `${v.sourceType ? `${v.sourceType}: ` : ""}수집 ${v.fetchedCount || 0}건, 청년 관련 ${v.savedCount || 0}건, 제외 ${v.skippedCount || 0}건${v.message ? ` (${escapeHtml(v.message)})` : ""}`;
 const formatDate = (v) => v ? new Date(v).toLocaleString("ko-KR") : "-";
 
 function renderConfig(body) {
   const labels = {openAiConfigured: "OPENAI_API_KEY", dataGoKrConfigured: "DATA_GO_KR_SERVICE_KEY",
     publicServiceConfigured: "공공서비스 키", localWelfareConfigured: "지자체복지 키",
-    centralWelfareConfigured: "중앙부처복지 키", youthCenterConfigured: "온통청년 API 키"};
+    centralWelfareConfigured: "중앙부처복지 키", youthCenterConfigured: "온통청년 자동 수집",
+    youthCenterOfficialConfigured: "온통청년 공식 키", dataGoKrYouthPolicyConfigured: "공공데이터 온통청년 키",
+    dataGoKrYouthPolicyBaseUrlConfigured: "공공데이터 온통청년 URL"};
   $("#configStatusList").innerHTML = Object.entries(labels).map(([key, label]) =>
-    `<div class="status-row ${body.data[key] ? "ok" : "missing"}"><span>${label}</span><strong>${body.data[key] ? "설정됨" : "미설정"}</strong></div>`).join("");
+    `<div class="status-row ${body.data[key] ? "ok" : "missing"}"><span>${label}</span><strong>${body.data[key] ? "설정됨" : "미설정"}</strong></div>`).join("")
+    + (body.data.youthCenterOfficialKeyPreview ? `<div class="status-row ok"><span>공식 키 preview</span><strong>${escapeHtml(body.data.youthCenterOfficialKeyPreview)}</strong></div>` : "")
+    + (body.data.dataGoKrYouthPolicyKeyPreview ? `<div class="status-row ok"><span>공공데이터 키 preview</span><strong>${escapeHtml(body.data.dataGoKrYouthPolicyKeyPreview)}</strong></div>` : "")
+    + (body.data.dataGoKrYouthPolicyBaseUrlMasked ? `<div class="status-row ok"><span>공공데이터 URL</span><strong>${escapeHtml(body.data.dataGoKrYouthPolicyBaseUrlMasked)}</strong></div>` : "");
 }
 
 function renderRagStatus(body) {
@@ -199,6 +214,26 @@ async function debugSearch() {
   })});
   $("#debugResult").textContent = JSON.stringify(body.data, null, 2);
   setMessage(adminResult, "검색 후보 디버그 완료", "success");
+}
+
+async function debugYouthRaw(path) {
+  const response = await fetch(path);
+  const body = await response.json().catch(() => ({success: false, message: `HTTP ${response.status}`}));
+  if (!response.ok) throw new Error(body.message || "온통청년 원본 응답 조회 실패");
+  $("#debugResult").textContent = JSON.stringify({
+    apiType: body.data?.apiType,
+    statusCode: body.data?.statusCode,
+    contentType: body.data?.contentType,
+    looksLikeXml: body.data?.looksLikeXml,
+    looksLikeJson: body.data?.looksLikeJson,
+    looksLikeHtml: body.data?.looksLikeHtml,
+    requestUrlMasked: body.data?.requestUrlMasked,
+    redirectLocation: body.data?.redirectLocation,
+    bodyPreview: body.data?.bodyPreview
+  }, null, 2);
+  setMessage(adminResult, body.success
+    ? (body.message || "온통청년 원본 응답 조회 완료")
+    : `${body.message || "온통청년 원본 응답 확인 필요"} XML 또는 JSON이 내려오는지 확인하세요.`, body.success ? "success" : "error");
 }
 
 async function restoreRunningJobs() {

@@ -41,6 +41,7 @@
         <label>maxItems <input id="maxItems" type="number" min="1" max="300" value="150"></label>
         <label>indexLimit <input id="indexLimit" type="number" min="1" max="100" value="30"></label>
       </div>
+      <p class="notice">온통청년은 공식 사이트 API와 공공데이터포털 API가 별도입니다. 공공데이터포털에서 발급받은 키는 DATA_GO_KR_YOUTH_POLICY_KEY 또는 DATA_GO_KR_SERVICE_KEY에 넣고, 공공데이터포털 온통청년 요청 URL은 DATA_GO_KR_YOUTH_POLICY_BASE_URL에 넣어야 합니다.</p>
       <div class="admin-grid">
         <button class="secondary-button" data-action="configStatus">환경변수 상태 확인</button>
         <button class="secondary-button" data-action="ragStatus">RAG 데이터 상태 확인</button>
@@ -48,8 +49,13 @@
         <button class="secondary-button" data-action="ingestPublicService" data-job-type="INGEST_PUBLIC_SERVICE">행정안전부 공공서비스 API 수집 시작</button>
         <button class="secondary-button" data-action="ingestLocalWelfare" data-job-type="INGEST_LOCAL_WELFARE">지자체복지서비스 API 수집 시작</button>
         <button class="secondary-button" data-action="ingestCentralWelfare" data-job-type="INGEST_CENTRAL_WELFARE">중앙부처복지서비스 API 수집 시작</button>
-        <button class="secondary-button" data-action="ingestYouthCenter" data-job-type="INGEST_YOUTH_CENTER">온통청년 청년정책 API 수집 시작</button>
+        <button class="primary-button" data-action="ingestYouthCenter" data-job-type="INGEST_YOUTH_CENTER">온통청년 수집 자동</button>
+        <button class="secondary-button" data-action="ingestYouthCenterOfficial" data-job-type="INGEST_YOUTH_CENTER">온통청년 공식 API 수집</button>
+        <button class="secondary-button" data-action="ingestYouthPolicyDataGoKr" data-job-type="INGEST_YOUTH_CENTER">공공데이터포털 온통청년 API 수집</button>
+        <button class="secondary-button" data-action="debugYouthCenterOfficialRaw">온통청년 공식 원본 확인</button>
+        <button class="secondary-button" data-action="debugYouthPolicyDataGoKrRaw">공공데이터 온통청년 원본 확인</button>
         <button class="primary-button" data-action="indexReal" data-job-type="INDEX_REAL">실제 정책 데이터 인덱싱 시작</button>
+        <button class="secondary-button" data-action="indexYouthCenter" data-job-type="INDEX_REAL">온통청년 정책만 인덱싱</button>
         <button class="secondary-button" data-action="reindexReal" data-job-type="REINDEX_REAL">실제 정책 데이터 재인덱싱</button>
         <button class="secondary-button" data-action="loadPolicies">저장된 정책 목록 불러오기</button>
         <button class="secondary-button" data-action="debugSearch">검색 후보 디버그</button>

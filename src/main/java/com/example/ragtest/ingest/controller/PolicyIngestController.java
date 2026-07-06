@@ -39,8 +39,9 @@ public class PolicyIngestController {
     private final String publicServiceKey;
     private final String localWelfareKey;
     private final String centralWelfareKey;
-    private final String youthCenterKey;
-    private final String youthPolicyKey;
+    private final String youthCenterOfficialKey;
+    private final String dataGoKrYouthPolicyKey;
+    private final String dataGoKrYouthPolicyBaseUrl;
 
     public PolicyIngestController(
             ExternalPolicyIngestService ingestService,
@@ -50,8 +51,9 @@ public class PolicyIngestController {
             @Value("${external-api.data-go-kr.public-service-key:}") String publicServiceKey,
             @Value("${external-api.data-go-kr.local-welfare-key:}") String localWelfareKey,
             @Value("${external-api.data-go-kr.central-welfare-key:}") String centralWelfareKey,
-            @Value("${external-api.youth-center.api-key:}") String youthCenterKey,
-            @Value("${external-api.data-go-kr.youth-policy-key:}") String youthPolicyKey
+            @Value("${external-api.youth-center.official-api-key:}") String youthCenterOfficialKey,
+            @Value("${external-api.data-go-kr.youth-policy-key:}") String dataGoKrYouthPolicyKey,
+            @Value("${external-api.data-go-kr.youth-policy-base-url:}") String dataGoKrYouthPolicyBaseUrl
     ) {
         this.ingestService = ingestService;
         this.indexingService = indexingService;
@@ -60,15 +62,16 @@ public class PolicyIngestController {
         this.publicServiceKey = publicServiceKey;
         this.localWelfareKey = localWelfareKey;
         this.centralWelfareKey = centralWelfareKey;
-        this.youthCenterKey = youthCenterKey;
-        this.youthPolicyKey = youthPolicyKey;
+        this.youthCenterOfficialKey = youthCenterOfficialKey;
+        this.dataGoKrYouthPolicyKey = dataGoKrYouthPolicyKey;
+        this.dataGoKrYouthPolicyBaseUrl = dataGoKrYouthPolicyBaseUrl;
     }
 
     @GetMapping("/rag/status")
     public ApiResponse<Map<String, Object>> ragStatus() {
         long youth = policyRepository.countBySourceTypeNotAndYouthRelatedTrue(PolicySourceType.SAMPLE);
         long indexed = policyRepository.countBySourceTypeNotAndYouthRelatedTrueAndIndexedTrue(PolicySourceType.SAMPLE);
-        boolean youthCenterConfigured = hasText(youthCenterKey) || hasText(youthPolicyKey);
+        boolean youthCenterConfigured = youthIngestConfigured();
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("totalPolicies", policyRepository.count());
@@ -182,10 +185,34 @@ public class PolicyIngestController {
     public ApiResponse<AdminJob> ingestYouthCenter(@RequestParam(defaultValue = "3") int maxPages,
                                                    @RequestParam(defaultValue = "50") int pageSize,
                                                    @RequestParam(defaultValue = "150") int maxItems) {
-        requireKey(effectiveYouthKey(), "YOUTH_CENTER_API_KEY 또는 DATA_GO_KR_YOUTH_POLICY_KEY가 필요합니다.");
+        if (!youthIngestConfigured()) {
+            throw new BusinessException("온통청년 수집 설정이 없습니다. DATA_GO_KR_YOUTH_POLICY_BASE_URL과 "
+                    + "DATA_GO_KR_YOUTH_POLICY_KEY 또는 YOUTH_CENTER_API_KEY를 설정하세요.");
+        }
         IngestOptions options = new IngestOptions(maxPages, pageSize, maxItems);
-        return startIngest(AdminJobType.INGEST_YOUTH_CENTER, "온통청년 청년정책",
-                progress -> ingestService.ingestYouthCenterPolicies(options));
+        return startIngest(AdminJobType.INGEST_YOUTH_CENTER, "온통청년 청년정책 자동",
+                progress -> ingestService.ingestYouthPolicies(options));
+    }
+
+    @PostMapping("/ingest/youth-center-official")
+    public ApiResponse<AdminJob> ingestYouthCenterOfficial(@RequestParam(defaultValue = "3") int maxPages,
+                                                           @RequestParam(defaultValue = "10") int pageSize,
+                                                           @RequestParam(defaultValue = "150") int maxItems) {
+        requireKey(youthCenterOfficialKey, "YOUTH_CENTER_API_KEY가 필요합니다. 이 값은 온통청년 공식 openApiVlak 키여야 합니다.");
+        IngestOptions options = new IngestOptions(maxPages, Math.min(pageSize, 10), maxItems);
+        return startIngest(AdminJobType.INGEST_YOUTH_CENTER, "온통청년 공식 API",
+                progress -> ingestService.ingestYouthCenterOfficial(options));
+    }
+
+    @PostMapping("/ingest/youth-policy-data-go-kr")
+    public ApiResponse<AdminJob> ingestYouthPolicyDataGoKr(@RequestParam(defaultValue = "3") int maxPages,
+                                                           @RequestParam(defaultValue = "50") int pageSize,
+                                                           @RequestParam(defaultValue = "150") int maxItems) {
+        requireKey(dataGoKrYouthPolicyKey, "DATA_GO_KR_YOUTH_POLICY_KEY 또는 DATA_GO_KR_SERVICE_KEY가 필요합니다.");
+        requireKey(dataGoKrYouthPolicyBaseUrl, "DATA_GO_KR_YOUTH_POLICY_BASE_URL이 필요합니다.");
+        IngestOptions options = new IngestOptions(maxPages, pageSize, maxItems);
+        return startIngest(AdminJobType.INGEST_YOUTH_CENTER, "공공데이터포털 온통청년 API",
+                progress -> ingestService.ingestDataGoKrYouthPolicy(options));
     }
 
     @PostMapping("/ingest/all")
@@ -206,9 +233,9 @@ public class PolicyIngestController {
                     result.put("localWelfare", ingestService.ingestLocalWelfareServices(options));
                     progress.update(55, "중앙부처복지서비스 수집 중...");
                     result.put("centralWelfare", ingestService.ingestCentralWelfareServices(options));
-                    if (hasText(effectiveYouthKey())) {
+                    if (youthIngestConfigured()) {
                         progress.update(80, "온통청년 청년정책 수집 중...");
-                        result.put("youthCenter", ingestService.ingestYouthCenterPolicies(options));
+                        result.put("youthCenter", ingestService.ingestYouthPolicies(options));
                     }
                     progress.update(95, "수집 결과 정리 중...");
                     return result;
@@ -225,10 +252,6 @@ public class PolicyIngestController {
         return ApiResponse.ok(job, "작업 시작");
     }
 
-    private String effectiveYouthKey() {
-        return hasText(youthCenterKey) ? youthCenterKey : youthPolicyKey;
-    }
-
     private int indexProgress(int completed, int total) {
         return total <= 0 ? 95 : Math.min(95, 10 + (completed * 85 / total));
     }
@@ -239,6 +262,11 @@ public class PolicyIngestController {
 
     private void requireKey(String key, String message) {
         if (!hasText(key)) throw new BusinessException(message);
+    }
+
+    private boolean youthIngestConfigured() {
+        return (hasText(dataGoKrYouthPolicyKey) && hasText(dataGoKrYouthPolicyBaseUrl))
+                || hasText(youthCenterOfficialKey);
     }
 
     private boolean hasText(String value) {
